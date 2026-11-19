@@ -493,6 +493,15 @@ class NetflixCheckerBot:
         logger.info(f"Bot iniciado - Dev: {DEVELOPER} - ANTISPAM ACTIVO - ADMIN PROTEGIDO - PROXIES ACTIVOS")
         self.app.run_polling()
 
+import asyncio
+
 if __name__ == "__main__":
+    # Crear explícitamente el event loop para Python 3.14+
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    except Exception:
+        pass
+    
     bot = NetflixCheckerBot(BOT_TOKEN)
     bot.run()
