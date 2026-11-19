@@ -299,11 +299,11 @@ class NetflixCheckerBot:
         self.app.add_handler(CommandHandler("done", self.done_command))
         self.app.add_handler(CommandHandler("cancel", self.cancel_command))
 
-        # Manejador de texto normal
-        self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
+        # Manejador para archivos .txt
+        self.app.add_handler(MessageHandler(filters.Document.TEXT, self.handle_document_txt))
 
-        # Manejador de Documentos (.zip, .txt)
-        self.app.add_handler(MessageHandler(filters.Document, self.handle_document))
+        # Manejador para ZIPs
+        self.app.add_handler(MessageHandler(filters.Document.UPLOADABLE_FILE, self.handle_document_zip))
     def is_admin(self, user_id):
         return user_id in ADMIN_IDS
 
