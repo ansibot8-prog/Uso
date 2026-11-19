@@ -303,8 +303,7 @@ class NetflixCheckerBot:
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
         # Manejador de Documentos (.zip, .txt)
-        self.app.add_handler(MessageHandler(filters.Document.PDF | filters.Document.DOC | filters.Document.TXT | filters.Document.DOCX | filters.Document.FILE, self.handle_document))
-
+        self.app.add_handler(MessageHandler(filters.Document, self.handle_document))
     def is_admin(self, user_id):
         return user_id in ADMIN_IDS
 
