@@ -300,8 +300,9 @@ class NetflixCheckerBot:
         # Manejador de texto normal
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
-        # CORRECCIÓN APLICADA AQUÍ: Se usa la clase Document para capturar cualquier archivo
-        self.app.add_handler(MessageHandler(Document, self.handle_document))
+ from telegram.ext import filters  # Asegúrate de importar filters arriba
+
+        self.app.add_handler(MessageHandler(filters.Document, self.handle_document))
 
     def is_admin(self, user_id):
         return user_id in ADMIN_IDS
