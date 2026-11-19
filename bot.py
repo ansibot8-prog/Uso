@@ -19,9 +19,9 @@ import asyncio
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- CONFIGURACIÓN BÁSICA ---
-BOT_TOKEN = os.getenv("BOT_TOKEN", "9224399752:AAHWpHvkUUF8KdZe8h30jAkpDuMhZEvG9AQ")
+BOT_TOKEN = "9224399752:AAHWpHvkUUF8KdZe8h30jAkpDuMhZEvG9AQ"
 DEVELOPER = "AXEL MOLINA"
-VERSION = "3.2.0" # Actualizada para incluir fix de ZIPs
+VERSION = "3.1.0"
 
 # 🔒 IDs de ADMINS
 ADMIN_IDS = [8917082484]
@@ -94,9 +94,26 @@ def load_cookies(text):
             if k: cookies[k] = v
     return cookies
 
+def extract_text_from_file(file_bytes, filename):
+    """MEJORA CRÍTICA: Extrae contenido real de ZIPs o TXT"""
+    if filename.lower().endswith('.zip'):
+        try:
+            with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
+                # Busca el primer archivo .txt o .log dentro del zip
+                for name in z.namelist():
+                    if name.endswith(('.txt', '.log')):
+                        return z.read(name).decode('utf-8', errors='ignore')
+                # Si no hay txt, devuelve el primer archivo disponible
+                if z.namelist():
+                    return z.read(z.namelist()[0]).decode('utf-8', errors='ignore')
+        except Exception as e:
+            logger.error(f"Error descomprimiendo {filename}: {e}")
+            return None
+    return file_bytes.decode('utf-8', errors='ignore')
+
 _IOS_API = "https://ios.prod.ftl.netflix.com/iosui/user/15.48"
 _IOS_PARAMS = {"appVersion":"15.48.1","config":'{"gamesInTrailersEnabled":"false","isTrailersEvidenceEnabled":"false","cdsMyListSortEnabled":"true","kidsBillboardEnabled":"true","billboardEnabled":"true","sharksEnabled":"true","useCDSGalleryEnabled":"true","avifFormatEnabled":"false"}',"device_type":"NFAPPL-02-","esn":"NFAPPL-02-IPHONE8%3D1-PXA-02026U9VV5O8AUKEAEO8PUJETCGDD4PQRI9DEB3MDLEMD0EACM4CS78LMD334MN3MQ3NMJ8SU9O9MVGS6BJCURM1PH1MUTGDPF4S4200","idiom":"phone","iosVersion":"15.8.5","isTablet":"false","languages":"en-US","locale":"en-US","maxDeviceWidth":"375","model":"saget","modelType":"IPHONE8-1","odpAware":"true","path":'["account","token","default"]',"pathFormat":"graph","pixelDensity":"2.0","progressive":"false","responseFormat":"json"}
-_IOS_HEADERS = {"User-Agent":"Argo/15.48.1 (iPhone; iOS 15.8.5; Scale/2.00)","x-netflix.request.attempt":"1","x-netflix.request.client.user.guid":"A4CS633D7VCBPE2GPK2HL4EKOE","x-netflix.context.profile-guid":"A4CS633D7VCBPE2GPK2HL4EKOE","x-netflix.request.routing":'{"path":"/nq/mobile/nqios/~15.48.0/user","control_tag":"iosui_argo"}',"x-netflix.context.app-version":"15.48.1","x-netflix.argo.translated":"true","x-netflix.context.form-factor":"phone","x-netflix.context.sdk-version":"2012.4","x-netflix.client.appversion":"15.48.1","x-netflix.context.max-device-width":"375","x-netflix.context.ab-tests":"","x-netflix.tracing.cl.useractionid":"4DC655F2-9C3C-4343-8229-CA1B003C3053","x-netflix.client.type":"argo","x-netflix.client.ftl.esn":"NFAPPL-02-IPHONE8=1-PXA-02026U9VV5O8AUKEAEO8PUJETCGDD4PQRI9DEB3MDLEMD0EACM4CS78LMD334MN3MQ3NMJ8SU9O9MVGS6BJCURM1PH1MUTGDPF4S4200","x-netflix.context.locales":"en-US","x-netflix.context.top-level-uuid":"90AFE39F-ADF1-4D8A-B33E-528730990FE3","x-netflix.client.iosversion":"15.8.5","accept-language":"en-US;q=1","x-netflix.argo.abtests":"","x-netflix.context.os-version":"15.8.5","x-netflix.request.client.context":'{"appState":"foreground"}',"x-netflix.context.ui-flavor":"argo","x-netflix.argo.nfnsm":"9","x-netflix.context.pixel-density":"2.0","x-netflix.request.toplevel.uuid":"90AFE39F-ADF1-4D8A-B33E-528730990FE3","x-netflix.request.client.timezoneid":"Asia/Dhaka"}
+_IOS_HEADERS = {"User-Agent":"Argo/15.48.1 (iPhone; iOS 15.8.5; Scale/2.00)","x-netflix.request.attempt":"1","x-netflix.request.client.user.guid":"A4CS633D7VCBPE2GPK2HL4EKOE","x-netflix.context.profile-guid":"A4CS633D7VCBPE2GPK2HL4EKOE","x-netflix.request.routing":'{"path":"/nq/mobile/nqios/~15.48.0/user","control_tag":"iosui_argo"}',"x-netflix.context.app-version":"15.48.1","x-netflix.argo.translated":"true","x-netflix.context.form-factor":"phone","x-netflix.context.sdk-version":"2012.4","x-netflix.client.appversion":"15.48.1","x-netflix.context.max-device-width":"375","x-netflix.context.ab-tests":"","x-netflix.tracing.cl.useractionid":"4DC655F2-9C3C-4343-8229-CA1B003C3053","x-netflix.client.type":"argo","x-netflix.client.ftl.esn":"NFAPPL-02-IPHONE8=1-PXA-02026U9VV5O8AUKEAEO8PUJETCGDD4PQRI9DEB3MDLEMD0EACM4CS78LMD334MN3MQ3NMJ8SU9O9MVGS6BJCURM1PH1MUTGDPF4S4200","x-netflix.context.locales":"en-US","x-netflix.context.top-level-uuid":"90AFE39F-ADF1-4D8A-B33E-528730990FE3","x-netflix.client.iosversion":"15.8.5","accept-language":"en-US;q=1","x-netflix.argo.abtests":"","x-netflix.context.os-version":"15.8.5","x-netflix.request.client.context":'{"appState":"foreground"}',"x-netflix.context.ui-flavor":"argo","x-netflix.argo.nfnsm":"9","x-netflix.context.pixel-density":"2.0","x-netflix.request.toplevel.uuid":"90AFE39F-ADF1-4D8A-B33E-528730990FE3","x-netflix.client.type":"argo"}
 
 def generate_nftoken(netflix_id_raw, timeout=15, proxy=None):
     if not netflix_id_raw: return None
@@ -262,59 +279,6 @@ class NetflixChecker:
         cpm = (self.stats["checked"]/elapsed*60) if elapsed>0 else 0
         return {"total":self.stats["total"],"checked":self.stats["checked"],"hits":self.stats["hits"],"bad":self.stats["bad"],"errors":self.stats["errors"],"elapsed":f"{elapsed:.1f}s","cpm":f"{cpm:.1f}"}
 
-async def handle_document_txt(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    doc = update.message.document
-    file_obj = await context.bot.get_file(doc.file_id)
-    content = await file_obj.download_as_bytearray()
-    text_content = content.decode('utf-8', errors='ignore')
-    
-    await update.message.reply_text("📂 Procesando TXT...")
-    lines = [line.strip() for line in text_content.split('\n') if line.strip()]
-    
-    if not lines:
-        await update.message.reply_text("❌ Archivo vacío.")
-        return
-
-    await update.message.reply_text(f"✅ TXT leído correctamente. {len(lines)} líneas encontradas. Use /done para verificar.")
-    user_id = update.effective_user.id
-    if user_id not in context.args.get('sessions'): 
-        context.args['sessions'][user_id] = []
-    context.args['sessions'][user_id].extend(lines)
-
-async def handle_document_zip(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    doc = update.message.document
-    file_obj = await context.bot.get_file(doc.file_id)
-    content = await file_obj.download_as_bytearray()
-    
-    # Extraer texto del zip
-    try:
-        with zipfile.ZipFile(io.BytesIO(content)) as z:
-            for name in z.namelist():
-                if name.endswith(('.txt', '.log')):
-                    text_content = z.read(name).decode('utf-8', errors='ignore')
-                    break
-            else:
-                text_content = z.read(z.namelist()[0]).decode('utf-8', errors='ignore')
-    except Exception:
-        text_content = None
-
-    if not text_content:
-         await update.message.reply_text("❌ Formato no reconocido o ZIP corrupto.")
-         return
-
-    await update.message.reply_text("📂 Procesando ZIP...")
-    lines = [line.strip() for line in text_content.split('\n') if line.strip()]
-    
-    if not lines:
-        await update.message.reply_text("❌ Archivo vacío.")
-        return
-
-    await update.message.reply_text(f"✅ ZIP leído correctamente. {len(lines)} líneas encontradas. Use /done para verificar.")
-    user_id = update.effective_user.id
-    if user_id not in context.args.get('sessions'): 
-        context.args['sessions'][user_id] = []
-    context.args['sessions'][user_id].extend(lines)
-
 class NetflixCheckerBot:
     def __init__(self, token):
         self.token = token
@@ -327,9 +291,7 @@ class NetflixCheckerBot:
                 proxy_list = [line.strip() for line in f if line.strip()]
 
         self.checker = NetflixChecker(threads=5, proxy_list=proxy_list)
-        
-        # Inicializar sesiones dentro de un diccionario compartido
-        self.sessions_store = {} 
+        self.user_sessions = {}
 
         self.app.add_handler(CommandHandler("start", self.start_command))
         self.app.add_handler(CommandHandler("help", self.help_command))
@@ -341,9 +303,8 @@ class NetflixCheckerBot:
         # Manejador de texto normal
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
-        # Manejadores de Documentos separados para evitar errores
-        self.app.add_handler(MessageHandler(filters.Document.TEXT, handle_document_txt))
-        self.app.add_handler(MessageHandler(filters.Document.UPLOADABLE_FILE, handle_document_zip))
+        # Manejador de Documentos (.zip, .txt)
+        self.app.add_handler(MessageHandler(filters.Document.PDF | filters.Document.DOC | filters.Document.TXT | filters.Document.DOCX | filters.Document.FILE, self.handle_document))
 
     def is_admin(self, user_id):
         return user_id in ADMIN_IDS
@@ -365,7 +326,7 @@ class NetflixCheckerBot:
             f"<b>👨‍💻 Desenvolvedor:</b> {DEVELOPER}\n\n"
             f"🔑 Envie su cookie o archivo (.zip/.txt)\n"
             f"📋 /help - Comandos disponibles\n\n"
-            f"🛡️ <b>Antispam ATIVADO!</b>\n"
+            f"🛡️ <b>Antispam ATIVado!</b>\n"
             f"🔒 /stats y /logs - Solo ADM",
             parse_mode="HTML", reply_markup=markup
         )
@@ -431,10 +392,8 @@ class NetflixCheckerBot:
 
     async def done_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
-        # Usamos el store global para obtener las sesiones
-        sessions = context.args.get('sessions')
-        if user_id in sessions and sessions[user_id]:
-            cookies_list = sessions[user_id]
+        if user_id in self.user_sessions and self.user_sessions[user_id]:
+            cookies_list = self.user_sessions[user_id]
             await update.message.reply_text(f"🔄 Procesando {len(cookies_list)} cookies...")
             results = self.checker.process_batch(cookies_list)
             if results:
@@ -443,16 +402,45 @@ class NetflixCheckerBot:
                     await self.send_hit_message(update, acc)
             else:
                 await update.message.reply_text("❌ Ningún hit.")
-            sessions[user_id] = []
+            self.user_sessions[user_id] = []
         else:
             await update.message.reply_text("ℹ️ No hay cookies pendientes.")
 
     async def cancel_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
-        sessions = context.args.get('sessions')
-        if user_id in sessions:
-            sessions[user_id] = []
+        self.user_sessions[user_id] = []
         await update.message.reply_text("❌ Cancelado.")
+
+    async def handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        doc = update.message.document
+        try:
+            file_obj = await context.bot.get_file(doc.file_id)
+            content = await file_obj.download_as_bytearray()
+            
+            # MEJORA: Detectar si es zip o txt
+            text_content = extract_text_from_file(content, doc.file_name or "")
+            
+            if not text_content:
+                 await update.message.reply_text("❌ Formato no reconocido o ZIP corrupto.")
+                 return
+
+            await update.message.reply_text("📂 Procesando archivo...")
+            # Dividimos por líneas para procesar cada cookie individualmente
+            lines = [line.strip() for line in text_content.split('\n') if line.strip()]
+            
+            if not lines:
+                await update.message.reply_text("❌ Archivo vacío.")
+                return
+
+            await update.message.reply_text(f"✅ Archivo leído correctamente. {len(lines)} líneas encontradas. Use /done para verificar.")
+            user_id = update.effective_user.id
+            if user_id not in self.user_sessions: self.user_sessions[user_id] = []
+            
+            # Añadimos cada línea como una cookie independiente
+            self.user_sessions[user_id].extend(lines)
+        except Exception as e:
+            logger.error(f"Error handling document: {e}")
+            await update.message.reply_text("❌ Error al procesar el documento.")
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
@@ -476,13 +464,11 @@ class NetflixCheckerBot:
                 await update.message.reply_text("❌ Cookie inválida.")
         else:
             user_id = user.id
-            sessions = context.args.get('sessions')
-            if user_id not in sessions: sessions[user_id] = []
-            
+            if user_id not in self.user_sessions: self.user_sessions[user_id] = []
             cookies = load_cookies(message_text)
             if cookies:
-                sessions[user_id].append(message_text)
-                count = len(sessions[user_id])
+                self.user_sessions[user_id].append(message_text)
+                count = len(self.user_sessions[user_id])
                 await update.message.reply_text(f"📦 Cookie almacenada! ({count} en la cola)\n/done para procesar\n/cancel para cancelar")
             else:
                 await update.message.reply_text("❌ Formato no reconocido.\nUse /help para ayuda.")
@@ -543,9 +529,4 @@ if __name__ == "__main__":
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     bot = NetflixCheckerBot(BOT_TOKEN)
-    
-    # Inicializar el store de sesiones para pasar a los handlers
-    bot.app.initialize()
-    bot.app.updater.dispatcher.update_queue = type('Queue', (), {'args': {'sessions': bot.sessions_store}})()
-    
     bot.run()
