@@ -15,6 +15,9 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 import logging
 from logging.handlers import RotatingFileHandler
 import asyncio
+# Filtro personalizado para evitar errores de versión
+def is_document(update):
+    return update.message.document is not None
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
