@@ -10,9 +10,11 @@ import urllib3
 import urllib.parse
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Document
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import logging
+from logging.handlers import RotatingFileHandler
+import asyncio
 from logging.handlers import RotatingFileHandler
 import asyncio
 
@@ -300,8 +302,7 @@ class NetflixCheckerBot:
         # Manejador de texto normal
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
- from telegram.ext import filters  # Asegúrate de importar filters arriba
-
+   # Asegúrate de importar filters arriba
         self.app.add_handler(MessageHandler(filters.Document, self.handle_document))
 
     def is_admin(self, user_id):
