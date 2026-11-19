@@ -19,7 +19,7 @@ import asyncio
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- CONFIGURACIÓN BÁSICA ---
-BOT_TOKEN = os.getenv("BOT_TOKEN", "9224399752:AAHWpHvkUUF8KdZe8h30jAkpDuMhZEvG9AQ")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "9224399752:AAG41SCYfT8AChPBCv6p8wjLlyTIwUR_TPQ")
 DEVELOPER = "AXEL MOLINA"
 VERSION = "3.2.2" # Actualizada a versión corregida
 
