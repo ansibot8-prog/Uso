@@ -273,10 +273,12 @@ class NetflixChecker:
         with open(path, "w", encoding="utf-8") as f:
             f.write(f"Email: {acc['email']}\nName: {acc['name']}\nCountry: {acc['country']} ({acc['country_code']})\nPlan: {acc['plan']}\nPrice: {acc['price']}\nMember Since: {acc['member_since']}\nNext Billing: {acc['next_billing']}\nFree Trial: {'Yes' if acc['free_trial'] else 'No'}\nVideo Quality: {acc['video_quality']}\nMax Streams: {acc['max_streams']}\nExtra Slots: {acc['extra_slots']}\nCard: {acc['card_brand']} *{acc['card_last4']}\nPayment Method: {acc['payment_method']}\nPhone: {acc['phone']} | Verified: {acc['phone_verified']}\nProfiles ({acc['profile_count']}): {profs}\n\nLogin PC: {acc['login_pc']}\nLogin Phone: {acc['login_phone']}\nLogin TV: {acc['login_tv']}\n\nCookie: {cookie_val}\n")
 
-    def get_stats(self):
-        elapsed = time.time() - self.stats["start"]
-        cpm = (self.stats["checked"]/elapsed*60) if elapsed>0 else 0
-        return {"total":self.stats["total"],"checked":self.stats["checked"],"hits":self.stats["hits"],"bad":self.stats["bad"],"errors":self.stats["errors"],"elapsed":f"{elapsed:.1f}s","cpm":f"{cpm:.1f}"}
+    def is_valid_doc(update):
+    #"""Filtro personalizado para validar documentos"""
+    doc = update.message.document
+    if not doc: return False
+    ext = doc.file_name.lower().split('.')[-1] if '.' in doc.file_name else ''
+    return ext in ['pdf', 'doc', 'docx', 'txt', 'zip']
 
 class NetflixCheckerBot:
     def __init__(self, token):
