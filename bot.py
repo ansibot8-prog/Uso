@@ -302,8 +302,13 @@ class NetflixCheckerBot:
         # Manejador de texto normal
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
-   # Asegúrate de importar filters arriba
-        self.app.add_handler(MessageHandler(filters.Document, self.handle_document))
+   def is_valid_doc(update):
+        doc = update.message.document
+        if not doc: return False
+        ext = doc.file_name.lower().split('.')[-1] if '.' in doc.file_name else ''
+        return ext in ['pdf', 'doc', 'docx', 'txt', 'zip']
+
+        self.app.add_handler(MessageHandler(is_valid_doc, self.handle_document))
 
     def is_admin(self, user_id):
         return user_id in ADMIN_IDS
