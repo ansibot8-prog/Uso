@@ -303,8 +303,8 @@ class NetflixCheckerBot:
         # Manejador de texto normal
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
-        # MEJORA: Usamos filters.Document.ANY para capturar cualquier archivo enviado
-         self.app.add_handler(MessageHandler(filters.Document.ANY, self.handle_document))
+        # CORRECCIÓN AQUÍ: Usamos ANY para evitar errores de atributo
+        self.app.add_handler(MessageHandler(filters.Document.ANY, self.handle_document))
 
     def is_admin(self, user_id):
         return user_id in ADMIN_IDS
