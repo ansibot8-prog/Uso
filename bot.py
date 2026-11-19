@@ -16,12 +16,12 @@ from logging.handlers import RotatingFileHandler
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- CONFIGURACIÓN BÁSICA ---
-BOT_TOKEN = "8691326863:AAG-PHpLIvKqeBD0D_KHdwXgtjRONEfgOiI"
+BOT_TOKEN = "9224399752:AAHWpHvkUUF8KdZe8h30jAkpDuMhZEvG9AQ"
 DEVELOPER = "AXEL MOLINA"
 VERSION = "3.0.0" # Versión actualizada con proxies y humanización
 
 # 🔒 IDs de ADMINS (Solo ellos ven /stats y /logs)
-ADMIN_IDS = [8546034216]
+ADMIN_IDS = [8917082484]
 
 os.makedirs("logs", exist_ok=True)
 os.makedirs("hits", exist_ok=True)
