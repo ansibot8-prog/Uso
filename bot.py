@@ -19,7 +19,7 @@ import asyncio
 class DocumentFilter(filters.BaseFilter):
         def check_update(self, update):
         # Verifica si es un mensaje y tiene un documento adjunto
-        if isinstance(update, Update) and update.message:
+          if isinstance(update, Update) and update.message:
             return update.message.document is not None
         return False
 
