@@ -15,24 +15,33 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 import logging
 from logging.handlers import RotatingFileHandler
 import asyncio
-from logging.handlers import RotatingFileHandler
-import asyncio
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- CONFIGURACIÓN BÁSICA ---
+# Si quieres usar variable de entorno, descomenta la siguiente línea y comenta la de abajo
+# BOT_TOKEN = os.getenv("BOT_TOKEN", "9224399752:AAHWpHvkUUF8KdZe8h30jAkpDuMhZEvG9AQ")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "9224399752:AAHWpHvkUUF8KdZe8h30jAkpDuMhZEvG9AQ")
 DEVELOPER = "AXEL MOLINA"
-VERSION = "3.2.0" # Actualizada a versión corregida
+VERSION = "3.2.1" # Actualizada a versión corregida
 
-# 🔒 IDs de ADMINS
-ADMIN_IDS = [8917082484]
+# 🔒 IDs de ADMINS - Puedes añadir más separados por coma en la variable de entorno ADMIN_IDS
+ADMIN_IDS_RAW = os.getenv("ADMIN_IDS", "8917082484")
+ADMIN_IDS = [int(x.strip()) for x in ADMIN_IDS_RAW.split(",") if x.strip()]
 
 os.makedirs("logs", exist_ok=True)
 os.makedirs("hits", exist_ok=True)
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[RotatingFileHandler("logs/bot.log", maxBytes=10*1024*1024, backupCount=5, encoding='utf-8'), logging.StreamHandler()])
+# Configuración de Logs
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[RotatingFileHandler("logs/bot.log", maxBytes=10*1024*12, backupCount=5, encoding='utf-8'), logging.StreamHandler()])
 logger = logging.getLogger(__name__)
+
+# Logger específico para hits globales
+hit_logger = logging.getLogger('hits')
+hit_handler = RotatingFileHandler("logs/hits.log", maxBytes=10*1024*12, backupCount=5, encoding='utf-8')
+hit_handler.setFormatter(logging.Formatter('%(message)s'))
+hit_logger.addHandler(hit_handler)
+hit_logger.setLevel(logging.INFO)
 
 # 🛡️ Palabras bloqueadas
 SPAM_WORDS = ['luckybear', 'казино', 'casino', 'bond', 'wndpr', 'lucky', 'bear', 'ставки', 'ставка', 'играть', 'выигрыш', 'приз', 'бонус', 't.me/', 'https://t.me/', 'https://wndpr', 'https://bond']
@@ -227,6 +236,20 @@ class NetflixChecker:
         self.stats = {"total":0,"checked":0,"hits":0,"bad":0,"errors":0,"start":time.time()}
         self.hits = []
 
+    def get_stats(self):
+        elapsed = time.time() - self.stats["start"]
+        checked = self.stats["checked"]
+        cpm = (checked / 60) * (elapsed / max(elapsed, 1)) if elapsed > 0 else 0
+        return {
+            "total": self.stats["total"],
+            "checked": checked,
+            "hits": self.stats["hits"],
+            "bad": self.stats["bad"],
+            "errors": self.stats["errors"],
+            "elapsed": f"{elapsed:.2f}s",
+            "cpm": f"{cpm:.0f}"
+        }
+
     def _next_proxy(self):
         if not self._proxy_list: return None
         with self.lock:
@@ -237,10 +260,15 @@ class NetflixChecker:
 
     def process_cookie(self, cookie_text):
         cookies = load_cookies(cookie_text)
-        try: result = check_account(cookies, proxy=self._next_proxy(), timeout=self.timeout)
-        except:
-            with self.lock: self.stats["errors"]+=1; self.stats["checked"]+=1
+        try: 
+            result = check_account(cookies, proxy=self._next_proxy(), timeout=self.timeout)
+        except Exception as e:
+            logger.error(f"Error processing cookie: {e}")
+            with self.lock: 
+                self.stats["errors"]+=1
+                self.stats["checked"]+=1
             return None
+        
         with self.lock:
             self.stats["checked"]+=1
             if result:
@@ -249,7 +277,9 @@ class NetflixChecker:
                 self.hits.append(result)
                 self._save_hit(result, cookie_text)
                 return result
-            else: self.stats["bad"]+=1; return None
+            else: 
+                self.stats["bad"]+=1 
+                return None
 
     def process_batch(self, cookies_list):
         self.stats["total"], self.stats["start"] = len(cookies_list), time.time()
@@ -260,7 +290,8 @@ class NetflixChecker:
                 try:
                     result = future.result()
                     if result: results.append(result)
-                except: pass
+                except Exception as e:
+                    logger.error(f"Future error: {e}")
         return results
 
     def _save_hit(self, acc, raw_cookie):
@@ -270,15 +301,19 @@ class NetflixChecker:
         profs = ", ".join(acc["profiles"]) if acc["profiles"] else "N/A"
         nf_id = acc.get("netflix_id_raw","")
         cookie_val = f"NetflixId={nf_id}" if nf_id else acc.get("cookie_raw","")
+        
+        # Escribir en archivo individual
         with open(path, "w", encoding="utf-8") as f:
             f.write(f"Email: {acc['email']}\nName: {acc['name']}\nCountry: {acc['country']} ({acc['country_code']})\nPlan: {acc['plan']}\nPrice: {acc['price']}\nMember Since: {acc['member_since']}\nNext Billing: {acc['next_billing']}\nFree Trial: {'Yes' if acc['free_trial'] else 'No'}\nVideo Quality: {acc['video_quality']}\nMax Streams: {acc['max_streams']}\nExtra Slots: {acc['extra_slots']}\nCard: {acc['card_brand']} *{acc['card_last4']}\nPayment Method: {acc['payment_method']}\nPhone: {acc['phone']} | Verified: {acc['phone_verified']}\nProfiles ({acc['profile_count']}): {profs}\n\nLogin PC: {acc['login_pc']}\nLogin Phone: {acc['login_phone']}\nLogin TV: {acc['login_tv']}\n\nCookie: {cookie_val}\n")
+        
+        # Escribir en log global
+        hit_logger.info(f"[{acc['country_code']}] {acc['email']} - {acc['plan']} - {acc['video_quality']}")
 
     def is_valid_doc(update):
-    #"""Filtro personalizado para validar documentos"""
-    doc = update.message.document
-    if not doc: return False
-    ext = doc.file_name.lower().split('.')[-1] if '.' in doc.file_name else ''
-    return ext in ['pdf', 'doc', 'docx', 'txt', 'zip']
+        doc = update.message.document
+        if not doc: return False
+        ext = doc.file_name.lower().split('.')[-1] if '.' in doc.file_name else ''
+        return ext in ['pdf', 'doc', 'docx', 'txt', 'zip']
 
 class NetflixCheckerBot:
     def __init__(self, token):
@@ -304,13 +339,8 @@ class NetflixCheckerBot:
         # Manejador de texto normal
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
-   def is_valid_doc(update):
-        doc = update.message.document
-        if not doc: return False
-        ext = doc.file_name.lower().split('.')[-1] if '.' in doc.file_name else ''
-        return ext in ['pdf', 'doc', 'docx', 'txt', 'zip']
-
-        self.app.add_handler(MessageHandler(is_valid_doc, self.handle_document))
+        # Manejador de documentos (CORREGIDO)
+        self.app.add_handler(MessageHandler(filters.Document.ALL, self.handle_document))
 
     def is_admin(self, user_id):
         return user_id in ADMIN_IDS
@@ -421,10 +451,10 @@ class NetflixCheckerBot:
         doc = update.message.document
         file_obj = await context.bot.get_file(doc.file_id)
         content = await file_obj.download_as_bytearray()
-        
+
         # MEJORA: Extraer texto real del archivo (soporta ZIP)
         text_content = extract_text_from_file(content, doc.file_name or "")
-        
+
         if not text_content:
              await update.message.reply_text("❌ Formato no reconocido o ZIP corrupto.")
              return
@@ -432,7 +462,7 @@ class NetflixCheckerBot:
         await update.message.reply_text("📂 Procesando archivo...")
         # Dividimos por líneas para procesar cada cookie individualmente
         lines = [line.strip() for line in text_content.split('\n') if line.strip()]
-        
+
         if not lines:
             await update.message.reply_text("❌ Archivo vacío.")
             return
@@ -440,7 +470,7 @@ class NetflixCheckerBot:
         await update.message.reply_text(f"✅ Archivo leído correctamente. {len(lines)} líneas encontradas. Use /done para verificar.")
         user_id = update.effective_user.id
         if user_id not in self.user_sessions: self.user_sessions[user_id] = []
-        
+
         # Añadimos cada línea como una cookie independiente
         self.user_sessions[user_id].extend(lines)
 
