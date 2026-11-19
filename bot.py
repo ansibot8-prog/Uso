@@ -307,7 +307,7 @@ class NetflixCheckerBot:
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
          # Solución: Filtra por Document sin especificar extensión, así acepta .zip, .txt, et
-        self.app.add_handler(MessageHandler(filters.Document, self.handle_document))
+        self.app.add_handler(MessageHandler(is_document, self.handle_document))
 
     def is_admin(self, user_id):
         return user_id in ADMIN_IDS
