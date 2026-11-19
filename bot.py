@@ -17,9 +17,11 @@ from logging.handlers import RotatingFileHandler
 import asyncio
 # AÑADE ESTO DESPUÉS DE LOS IMPORTS (línea ~18)
 class DocumentFilter(filters.BaseFilter):
-    #"""Filtro personalizado para documentos."""
-    def check_update(self, update):
-        return isinstance(update, Update) and update.message.document is not None
+        def check_update(self, update):
+        # Verifica si es un mensaje y tiene un documento adjunto
+        if isinstance(update, Update) and update.message:
+            return update.message.document is not None
+        return False
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
