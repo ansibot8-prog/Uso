@@ -15,9 +15,11 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 import logging
 from logging.handlers import RotatingFileHandler
 import asyncio
-# Filtro personalizado para evitar errores de versión
-def is_document(update):
-    return update.message.document is not None
+# AÑADE ESTO DESPUÉS DE LOS IMPORTS (línea ~18)
+class DocumentFilter(filters.Filter):
+    #"""Filtro personalizado para documentos."""
+    def check_update(self, update):
+        return isinstance(update, Update) and update.message.document is not None
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -306,8 +308,8 @@ class NetflixCheckerBot:
         # Manejador de texto normal
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
-         # Solución: Filtra por Document sin especificar extensión, así acepta .zip, .txt, et
-        self.app.add_handler(MessageHandler(is_document, self.handle_document))
+         # LÍNEA 205 - REEMPLAZA ESTA LÍNEA COMPLETA POR:
+        self.app.add_handler(MessageHandler(DocumentFilter(), self.handle_document))
 
     def is_admin(self, user_id):
         return user_id in ADMIN_IDS
