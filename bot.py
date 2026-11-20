@@ -17,8 +17,13 @@ import random
 # Configuración básica
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# ✅ CONFIGURACIÓN
-BOT_TOKEN = "9224399752:AAFplMUpYTFdZKUoX0WhkmVAP9BfA_vor24"
+# ✅ CONFIGURACIÓN PARA RENDER
+# Busca la variable "TELEGRAM_TOKEN" en los Environment Variables de Render
+BOT_TOKEN = os.environ.get('TELEGRAM_TOKEN')
+
+if not BOT_TOKEN:
+    raise ValueError("Falta la variable de entorno TELEGRAM_TOKEN en Render")
+
 DEVELOPER = "@Molina"
 VERSION = "3.1.0-ANTIBOT-REAL" # Actualizada para incluir navegación simulada y delays
 
@@ -185,10 +190,10 @@ def check_account(cookies: dict, proxy=None, timeout=20):
         # Esto calienta la sesión y obtiene cookies de tracking necesarias
         time.sleep(random.uniform(2, 4)) # Delay humano antes de entrar
         sess.get("https://www.netflix.com/", timeout=10)
-        
+
         # PASO 4: DELAY HUMANO ANTES DE PEDIR CUENTA
         time.sleep(random.uniform(3, 8)) # Simula que el usuario navegó y luego hizo click
-        
+
         # Pedimos la página de cuenta principal
         r = sess.get("https://www.netflix.com/account", allow_redirects=True, timeout=timeout)
     except Exception as e:
