@@ -32,7 +32,7 @@ ADMIN_IDS = [8917082484]
 os.makedirs("logs", exist_ok=True)
 os.makedirs("hits", exist_ok=True)
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[RotatingFileHandler("logs/bot.log", maxBytes=10*1024*1204, backupCount=5, encoding='utf-8'), logging.StreamHandler()])
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[RotatingFileHandler("logs/bot.log", maxBytes=10*1024*1024, backupCount=5, encoding='utf-8'), logging.StreamHandler()])
 logger = logging.getLogger(__name__)
 
 # 🛡️ Palabras bloqueadas (SPAM)
