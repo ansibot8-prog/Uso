@@ -24,7 +24,7 @@ if not BOT_TOKEN:
     raise ValueError("Falta la variable de entorno TELEGRAM_TOKEN en Render")
 
 DEVELOPER = "@Molina"
-VERSION = "3.2.0-INVISIBLE-NAV"
+VERSION = "3.1.0-ANTIBOT-REAL"
 
 # 🔒 IDs de ADMINS
 ADMIN_IDS = [8917082484]
@@ -84,12 +84,12 @@ def parse_netscape(text):
     cookies = {}
     for line in text.splitlines():
         line = line.strip()
-        if not line or line.startswith("#"):
+        if not line or line.startswith("#"): 
             continue
-
+        
         # Dividir por cualquier whitespace (espacios, tabs, mixtos)
         parts = line.split()
-
+        
         # Formato Netscape tiene 7+ columnas:
         # domain  flag  path  secure  expiration  name  value
         if len(parts) >= 7:
@@ -101,7 +101,7 @@ def parse_netscape(text):
             name, _, value = parts[0].partition("=")
             if name and value:
                 cookies[name] = value
-
+    
     return cookies
 
 def parse_json_cookies(text):
@@ -176,11 +176,10 @@ def generate_nftoken(netflix_id_raw, timeout=15, proxy=None):
 
 def check_account(cookies: dict, proxy=None, timeout=20):
     """
-    MODELO ANTI-BOT REAL CON NAVEGACIÓN SIMULADA:
+    MODELO ANTI-BOT REAL:
     1. Simula navegación inicial a Netflix Home.
     2. Aplica delays humanos entre peticiones.
     3. Verifica estado real de la membresía.
-    4. Delay extra antes de pedir token para mayor invisibilidad.
     """
     if not any(cookies.get(k) for k in ["NetflixId","SecureNetflixId"]): return None
 
@@ -199,16 +198,12 @@ def check_account(cookies: dict, proxy=None, timeout=20):
         sess.proxies, sess.verify = {"http":proxy,"https":proxy}, False
 
     try:
-        # Paso 1: Ir a Home
         time.sleep(random.uniform(2, 4))
         sess.get("https://www.netflix.com/", timeout=10)
 
-        # Paso 2: Simular lectura/navegación (Browse)
-        time.sleep(random.uniform(3, 6))
-        
-        # Paso 3: Ir a Cuenta con Referer natural
-        headers_ref = {"Referer": "https://www.netflix.com/browse"}
-        r = sess.get("https://www.netflix.com/account", allow_redirects=True, timeout=timeout, headers=headers_ref)
+        time.sleep(random.uniform(3, 8))
+
+        r = sess.get("https://www.netflix.com/account", allow_redirects=True, timeout=timeout)
     except Exception as e:
         logger.debug(f"Navegación fallida: {e}")
         return None
