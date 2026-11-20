@@ -274,8 +274,8 @@ def check_account(cookies: dict, proxy=None, timeout=20):
 
     if tok:
         tok_safe = urllib.parse.quote(tok, safe="")
-    login_pc = f"https://netflix.com/?nftoken={tok_safe}"
-    login_phone = f"https://netflix.com/unsupported?nftoken={tok_safe}"
+        login_pc = f"https://netflix.com/?nftoken={tok_safe}"
+        login_phone = f"https://netflix.com/unsupported?nftoken={tok_safe}"
     else:
         login_pc, login_phone = "N/A", "N/A"
 
