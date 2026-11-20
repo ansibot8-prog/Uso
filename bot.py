@@ -18,7 +18,7 @@ import random
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # ✅ CONFIGURACIÓN
-BOT_TOKEN = "9224399752:AAG41SCYfT8AChPBCv6p8wjLlyTIwUR_TPQ"
+BOT_TOKEN = "9224399752:AAHppg3p7llF942mwMg8v2OSjM9J40vul_o"
 DEVELOPER = "@jhonatan_felipe447"
 VERSION = "3.1.0-ANTIBOT-REAL" # Actualizada para incluir navegación simulada y delays
 
