@@ -24,16 +24,15 @@ if not BOT_TOKEN:
     raise ValueError("Falta la variable de entorno TELEGRAM_TOKEN en Render")
 
 DEVELOPER = "@Molina"
-VERSION = "3.2.0-ANTIBOT-INVISIBLE"
+VERSION = "3.2.0-INVISIBLE-NAV"
 
-# 🔒 IDs de ADMINS (Mejor cambiar esto a una variable de entorno si vas a escalar)
+# 🔒 IDs de ADMINS
 ADMIN_IDS = [8917082484]
 
 os.makedirs("logs", exist_ok=True)
 os.makedirs("hits", exist_ok=True)
 
-# FIX: Corregido el typo de 1204 a 1024 para que los logs roten correctamente a 10MB
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[RotatingFileHandler("logs/bot.log", maxBytes=10*1024*1024, backupCount=5, encoding='utf-8'), logging.StreamHandler()])
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[RotatingFileHandler("logs/bot.log", maxBytes=10*1024*1204, backupCount=5, encoding='utf-8'), logging.StreamHandler()])
 logger = logging.getLogger(__name__)
 
 # 🛡️ Palabras bloqueadas (SPAM)
@@ -135,10 +134,7 @@ _IOS_PARAMS = {"appVersion":"15.48.1","config":'{"gamesInTrailersEnabled":"false
 _IOS_HEADERS_BASE = {"x-netflix.request.attempt":"1","x-netflix.request.client.user.guid":"A4CS633D7VCBPE2GPK2HL4EKOE","x-netflix.context.profile-guid":"A4CS633D7VCBPE2GPK2HL4EKOE","x-netflix.request.routing":'{"path":"/nq/mobile/nqios/~15.48.0/user","control_tag":"iosui_argo"}',"x-netflix.context.app-version":"15.48.1","x-netflix.argo.translated":"true","x-netflix.context.form-factor":"phone","x-netflix.context.sdk-version":"2012.4","x-netflix.client.appversion":"15.48.1","x-netflix.context.max-device-width":"375","x-netflix.context.ab-tests":"","x-netflix.tracing.cl.useractionid":"4DC655F2-9C3C-4343-8229-CA1B003C3053","x-netflix.client.type":"argo","x-netflix.client.ftl.esn":"NFAPPL-02-IPHONE8=1-PXA-02026U9VV5O8AUKEAEO8PUJETCGDD4PQRI9DEB3MDLEMD0EACM4CS78LMD334MN3MQ3NMJ8SU9O9MVGS6BJCURM1PH1MUTGDPF4S4200","x-netflix.context.locales":"en-US","x-netflix.context.top-level-uuid":"90AFE39F-ADF1-4D8A-B33E-528730990FE3","x-netflix.client.iosversion":"15.8.5","accept-language":"en-US;q=1","x-netflix.argo.abtests":"","x-netflix.context.os-version":"15.8.5","x-netflix.request.client.context":'{"appState":"foreground"}',"x-netflix.context.ui-flavor":"argo","x-netflix.argo.nfnsm":"9","x-netflix.context.pixel-density":"2.0","x-netflix.request.toplevel.uuid":"90AFE39F-ADF1-4D8A-B33E-528730990FE3"}
 
 def generate_nftoken(netflix_id_raw, timeout=15, proxy=None):
-    """
-    Mejora: Intenta obtener un token real de login con UA rotativa y delays humanos.
-    Ahora respeta mejor la secuencia invisible.
-    """
+    """Mejora: Intenta obtener un token real de login con UA rotativa."""
     if not netflix_id_raw: return None
     netflix_id = urllib.parse.unquote(str(netflix_id_raw))
     proxies = {"http": proxy, "https": proxy} if proxy else None
@@ -180,7 +176,7 @@ def generate_nftoken(netflix_id_raw, timeout=15, proxy=None):
 
 def check_account(cookies: dict, proxy=None, timeout=20):
     """
-    MODELO ANTI-BOT REAL:
+    MODELO ANTI-BOT REAL CON NAVEGACIÓN SIMULADA:
     1. Simula navegación inicial a Netflix Home.
     2. Aplica delays humanos entre peticiones.
     3. Verifica estado real de la membresía.
@@ -203,12 +199,16 @@ def check_account(cookies: dict, proxy=None, timeout=20):
         sess.proxies, sess.verify = {"http":proxy,"https":proxy}, False
 
     try:
+        # Paso 1: Ir a Home
         time.sleep(random.uniform(2, 4))
         sess.get("https://www.netflix.com/", timeout=10)
 
-        time.sleep(random.uniform(3, 8))
-
-        r = sess.get("https://www.netflix.com/account", allow_redirects=True, timeout=timeout)
+        # Paso 2: Simular lectura/navegación (Browse)
+        time.sleep(random.uniform(3, 6))
+        
+        # Paso 3: Ir a Cuenta con Referer natural
+        headers_ref = {"Referer": "https://www.netflix.com/browse"}
+        r = sess.get("https://www.netflix.com/account", allow_redirects=True, timeout=timeout, headers=headers_ref)
     except Exception as e:
         logger.debug(f"Navegación fallida: {e}")
         return None
@@ -274,10 +274,6 @@ def check_account(cookies: dict, proxy=None, timeout=20):
 
     user_guid = _rx(r'"userGuid":"([^"]+)"', html)
     netflix_id_raw = cookies.get("NetflixId","")
-
-    # 🔴 INVISIBILIDAD MEJORADA: Delay humano antes de pedir el token
-    # Simula que el usuario está leyendo su perfil o navegando un poco más
-    time.sleep(random.uniform(3, 6))
 
     tok = generate_nftoken(netflix_id_raw, timeout, proxy=proxy) if netflix_id_raw else None
 
