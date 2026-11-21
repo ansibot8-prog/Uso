@@ -448,35 +448,28 @@ class NetflixCheckerBot:
     def is_admin(self, user_id):
         return user_id in ADMIN_IDS
 
-    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         logger.info(f"User {user.id} (@{user.username}) started bot")
+        
+        # Creamos los botones
+        keyboard = [
+            [InlineKeyboardButton("🎯 Ayuda", callback_data='help')],
+            [InlineKeyboardButton("🔵 Detalles", callback_data='stats')],
+            [InlineKeyboardButton("✅ Hits Guardados", callback_data='logs')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
         await update.message.reply_text(
             f"<b>╔══════════════════════════════════════╗</b>\n"
             f"<b>║     🎬 NETFLIX CHECKER BOT v{VERSION}    ║</b>\n"
             f"<b>╚══════════════════════════════════════╝</b>\n\n"
-            f"<b>👨‍💻 Desenvolvedor:</b> {DEVELOPER}\n\n"
-            f"🔑 Envie seu cookie para gerar <b>NFToken</b>!\n"
-            f"🎯 /help - Comandos disponíveis\n\n"
-            f"🛡️ <b>Antispam ATIVADO!</b>\n"
-            f"🔒 /stats e /logs - Só ADM",
-            parse_mode="HTML"
-        )
-
-    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text(
-            f"<b>╔══════════════════════════════════════╗</b>\n"
-            f"<b>║        📚 COMANDOS DISPONÍVEIS        ║</b>\n"
-            f"<b>╚══════════════════════════════════════╝</b>\n\n"
-            f"🎬 /start - Menu principal\n"
-            f"📋 /help - Esta ajuda\n"
-            f"📦 /done - Processar lote\n"
-            f"❌ /cancel - Cancelar operação\n\n"
-            f"🔒 /stats - Estatísticas (ADM)\n"
-            f"📊 /logs - Ver logs (ADM)\n\n"
-            f"🛡️ Spam bloqueado automaticamente!\n\n"
-            f"👨‍💻 {DEVELOPER}",
-            parse_mode="HTML"
+            f"<b>🛡️ Anti-spam ATIVADO!</b>\n\n"
+            f"👋 ¡Hola! Envía tu cookie para generar <b>NFToken</b> 🔑\n\n"
+            f"Elige una opción para comenzar 👇\n\n"
+            f"<b>👨‍💻 Desenvolvedor:</b> {DEVELOPER}",
+            parse_mode="HTML",
+            reply_markup=reply_markup
         )
 
     async def stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
