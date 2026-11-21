@@ -9,7 +9,7 @@ import urllib.parse
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 import logging
 from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 import random
@@ -44,6 +44,7 @@ logger.addHandler(console_handler)
 # 2. Handler para archivo con rotación por tamaño (10MB) y backup
 file_handler = RotatingFileHandler("logs/bot.log", maxBytes=10*1024*1024, backupCount=5, encoding='utf-8')
 file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+file_handler.addFilter(lambda record: record.levelno >= logging.INFO)
 logger.addHandler(file_handler)
 
 # 3. Handler para logs de hits específicos (rotación diaria)
@@ -192,7 +193,7 @@ def generate_nftoken(netflix_id_raw, timeout=15, proxy=None):
             if tok: return str(tok)
     except Exception as e:
         logger.debug(f"Android Token Error: {e}")
-        
+
     return None
 
 def check_account(cookies: dict, proxy=None, timeout=20):
@@ -357,7 +358,7 @@ class NetflixChecker:
         self.stats = {"total":0,"checked":0,"hits":0,"bad":0,"errors":0,"start":time.time()}
         # Memoria Optimizada: Límite de hits en memoria para evitar saturación
         self.hits = []
-        self.MAX_HITS_IN_MEMORY = 1000 
+        self.MAX_HITS_IN_MEMORY = 1000
 
     def _next_proxy(self):
         if not self._proxy_list: return None
@@ -369,13 +370,13 @@ class NetflixChecker:
 
     def process_cookie(self, cookie_text):
         cookies = load_cookies(cookie_text)
-        try: 
+        try:
             result = check_account(cookies, proxy=self._next_proxy(), timeout=self.timeout)
         except Exception as e:
             logger.error(f"Error procesando cookie: {e}", exc_info=True)
             with self.lock: self.stats["errors"]+=1; self.stats["checked"]+=1
             return None
-            
+
         with self.lock:
             self.stats["checked"]+=1
             if result:
@@ -383,13 +384,13 @@ class NetflixChecker:
                 result["cookie_raw"] = cookie_text.strip()
                 self.hits.append(result)
                 self._save_hit(result, cookie_text)
-                
+
                 # Limpiar memoria si excede el límite
                 if len(self.hits) > self.MAX_HITS_IN_MEMORY:
                     self.hits = self.hits[-self.MAX_HITS_IN_MEMORY:]
-                    
+
                 return result
-            else: 
+            else:
                 self.stats["bad"]+=1
                 return None
 
@@ -416,7 +417,7 @@ class NetflixChecker:
     def _save_hit(self, acc, raw_cookie):
         # Log estructurado de hit
         hit_logger.info(f"HIT | Email: {acc['email']} | Plan: {acc['plan']} | País: {acc['country']}")
-        
+
         safe_email = re.sub(r'[\\/:*?"<>|]', "_", acc["email"])
         fname = f"[{acc['country_code']}] [{safe_email}] - {acc['plan']}.txt"
         path = os.path.join("hits", fname)
@@ -437,18 +438,25 @@ class NetflixCheckerBot:
         self.app = Application.builder().token(token).build()
         self.checker = NetflixChecker(threads=5, proxy_list=proxy_list)
         self.user_sessions = {}
+        
+        # Handlers principales
         self.app.add_handler(CommandHandler("start", self.start_command))
         self.app.add_handler(CommandHandler("help", self.help_command))
         self.app.add_handler(CommandHandler("stats", self.stats_command))
         self.app.add_handler(CommandHandler("logs", self.logs_command))
         self.app.add_handler(CommandHandler("done", self.done_command))
         self.app.add_handler(CommandHandler("cancel", self.cancel_command))
+        
+        # Handler para botones (Callbacks)
+        self.app.add_handler(CallbackQueryHandler(self.button_handler))
+        
+        # Handler para mensajes normales
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
     def is_admin(self, user_id):
         return user_id in ADMIN_IDS
 
-        async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         logger.info(f"User {user.id} (@{user.username}) started bot")
         
@@ -472,25 +480,62 @@ class NetflixCheckerBot:
             reply_markup=reply_markup
         )
 
+    async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        if not query: return
+        
+        # Evitamos que aparezca el spinner de "cargando" indefinidamente
+        await query.answer()
+        
+        # Ejecutamos la función correspondiente según el botón presionado
+        if query.data == 'help':
+            await self.help_command(update, context)
+        elif query.data == 'stats':
+            await self.stats_command(update, context)
+        elif query.data == 'logs':
+            await self.logs_command(update, context)
+        
+        # Opcional: Eliminar el mensaje original con los botones para limpiar la pantalla
+        try:
+            await query.message.delete()
+        except:
+            pass
+
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text(
+            f"<b>╔══════════════════════════════════════╗</b>\n"
+            f"<b>║        📚 COMANDOS DISPONIBLES        ║</b>\n"
+            f"<b>╚══════════════════════════════════════╝</b>\n\n"
+            f"🎬 /start - Menú principal\n"
+            f"📋 /help - Esta ayuda\n"
+            f"📦 /done - Procesar lote\n"
+            f"❌ /cancel - Cancelar operación\n\n"
+            f"🔒 /stats - Estadísticas (ADM)\n"
+            f"📊 /logs - Ver logs (ADM)\n\n"
+            f"🛡️ Spam bloqueado automáticamente!\n\n"
+            f"👨‍💻 {DEVELOPER}",
+            parse_mode="HTML"
+        )
+
     async def stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         if not self.is_admin(user.id):
-            await update.message.reply_text("🔒 <b>ACESSO RESTRITO!</b>\nApenas o administrador pode usar este comando.", parse_mode="HTML")
+            await update.message.reply_text("🔒 <b>ACESO RESTRINGIDO!</b>\nSolo el administrador puede usar este comando.", parse_mode="HTML")
             return
         if self.checker.stats["checked"] == 0:
-            await update.message.reply_text("📊 Nenhuma estatística ainda.")
+            await update.message.reply_text("📊 No hay estadísticas aún.")
             return
         stats = self.checker.get_stats()
         await update.message.reply_text(
             f"<b>╔══════════════════════════════════════╗</b>\n"
-            f"<b>║        📊 ESTATÍSTICAS               ║</b>\n"
+            f"<b>║        📊 ESTADÍSTICAS               ║</b>\n"
             f"<b>╚══════════════════════════════════════╝</b>\n\n"
             f"📝 <b>Total:</b> {stats['total']}\n"
-            f"✅ <b>Checados:</b> {stats['checked']}\n"
+            f"✅ <b>Chequeados:</b> {stats['checked']}\n"
             f"🎯 <b>Hits:</b> {stats['hits']}\n"
             f"❌ <b>Bad:</b> {stats['bad']}\n"
-            f"⚠️ <b>Erros:</b> {stats['errors']}\n"
-            f"⏱ <b>Tempo:</b> {stats['elapsed']}\n"
+            f"⚠️ <b>Errores:</b> {stats['errors']}\n"
+            f"⏱ <b>Tiempo:</b> {stats['elapsed']}\n"
             f"🚀 <b>CPM:</b> {stats['cpm']}\n\n"
             f"👨‍💻 {DEVELOPER}",
             parse_mode="HTML"
@@ -499,7 +544,7 @@ class NetflixCheckerBot:
     async def logs_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         if not self.is_admin(user.id):
-            await update.message.reply_text("🔒 <b>ACESSO RESTRITO!</b>\nApenas o administrador pode usar este comando.", parse_mode="HTML")
+            await update.message.reply_text("🔒 <b>ACESO RESTRINGIDO!</b>\nSolo el administrador puede usar este comando.", parse_mode="HTML")
             return
         try:
             logs_text = "<b>╔══════════════════════════════════════╗</b>\n<b>║        📊 ÚLTIMOS LOGS               ║</b>\n<b>╚══════════════════════════════════════╝</b>\n\n"
@@ -510,29 +555,29 @@ class NetflixCheckerBot:
                     logs_text += "<b>🎯 Hits:</b>\n"
                     for h in hits:
                         logs_text += f"• {h.strip()[-80:]}\n"
-            await update.message.reply_text(logs_text + f"\n👨‍💻 {DEVELOPER}" if logs_text != "" else "Nenhum log ainda.", parse_mode="HTML")
+            await update.message.reply_text(logs_text + f"\n👨‍💻 {DEVELOPER}" if logs_text != "" else "No hay logs aún.", parse_mode="HTML")
         except Exception as e:
             logger.error(f"Error leyendo logs: {e}")
-            await update.message.reply_text("❌ Erro ao ler logs.")
+            await update.message.reply_text("❌ Error al leer logs.")
 
     async def done_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         if user_id in self.user_sessions and self.user_sessions[user_id]:
             cookies_list = self.user_sessions[user_id]
-            await update.message.reply_text(f"🔄 Processando {len(cookies_list)} cookies...")
-            
+            await update.message.reply_text(f"🔄 Procesando {len(cookies_list)} cookies...")
+
             # Usar el generador para eficiencia de memoria
             results = list(self.checker.process_batch_generator(cookies_list))
-            
+
             if results:
                 await update.message.reply_text(f"✅ {len(results)} HITS!")
                 for acc in results:
                     await self.send_hit_message(update, acc)
             else:
-                await update.message.reply_text("❌ Nenhum hit.")
+                await update.message.reply_text("❌ Ningún hit.")
             self.user_sessions[user_id] = []
         else:
-            await update.message.reply_text("ℹ️ Nenhum cookie pendente.")
+            await update.message.reply_text("ℹ️ No hay cookies pendientes.")
 
     async def cancel_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
@@ -547,7 +592,7 @@ class NetflixCheckerBot:
             logger.warning(f"SPAM bloqueado de @{user.username}: {message_text[:100]}")
             try: await update.message.delete()
             except: pass
-            await update.message.reply_text("🚫 <b>SPAM BLOQUEADO!</b>\n\nMensagem removida.", parse_mode="HTML")
+            await update.message.reply_text("🚫 <b>SPAM BLOQUEADO!</b>\n\nMensaje eliminado.", parse_mode="HTML")
             return
 
         logger.info(f"Message from @{user.username}: {message_text[:100]}")
@@ -558,7 +603,7 @@ class NetflixCheckerBot:
             if result:
                 await self.send_hit_message(update, result)
             else:
-                await update.message.reply_text("❌ Cookie inválido ou expirado.")
+                await update.message.reply_text("❌ Cookie inválido o expirado.")
         else:
             user_id = user.id
             if user_id not in self.user_sessions: self.user_sessions[user_id] = []
