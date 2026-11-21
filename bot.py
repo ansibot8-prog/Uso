@@ -483,18 +483,18 @@ class NetflixCheckerBot:
     async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         if not query: return
-        
+
         # Evitamos que aparezca el spinner de "cargando" indefinidamente
         await query.answer()
-        
+
         # Ejecutamos la función correspondiente según el botón presionado
         if query.data == 'help':
-            await self.help_command(update, context)
+            await self.help_command(query, context) # <--- CAMBIO AQUÍ
         elif query.data == 'stats':
-            await self.stats_command(update, context)
+            await self.stats_command(query, context) # <--- Y AQUÍ
         elif query.data == 'logs':
-            await self.logs_command(update, context)
-        
+            await self.logs_command(query, context)  # <--- Y AQUÍ
+
         # Opcional: Eliminar el mensaje original con los botones para limpiar la pantalla
         try:
             await query.message.delete()
