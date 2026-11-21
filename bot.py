@@ -553,11 +553,18 @@ class NetflixCheckerBot:
                     for h in hits:
                         logs_text += f"• {h.strip()[-80:]}\n"
             
-            final_text = logs_text + f"\n👨‍💻 {DEVELOPER}" if logs_text != "" else "No hay logs aún."
+                        final_text = logs_text + f"\n👨‍💻 {DEVELOPER}" if logs_text != "" else "No hay logs aún."
             await update.reply_text(final_text, parse_mode="HTML")
         except Exception as e:
             logger.error(f"Error leyendo logs: {e}")
             await update.reply_text("❌ Error al leer logs.")
+
+    async def done_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id
+        if user_id in self.user_sessions and self.user_sessions[user_id]:
+            cookies_list = self.user_sessions[user_id]
+            # Nota: Usamos update.message porque este comando viene como mensaje normal
+            await update.message.reply_text(f"🔄 Procesando {len(cookies_list)} cookies...")
 
             # Usar el generador para eficiencia de memoria
             results = list(self.checker.process_batch_generator(cookies_list))
