@@ -480,7 +480,7 @@ class NetflixCheckerBot:
             reply_markup=reply_markup
         )
 
-        async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         if not query: return
 
