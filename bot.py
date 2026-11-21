@@ -543,21 +543,26 @@ class NetflixCheckerBot:
         )
 
     async def logs_command(self, update, context):
+        final_text = ""  # <--- Definirla aquí evita el error si falla el try
         try:
             logs_text = "<b>╔══════════════════════════════════════╗</b>\n<b>║        📊 ÚLTIMOS LOGS               ║</b>\n<b>╚══════════════════════════════════════╝</b>\n\n"
+            
             if os.path.exists("logs/hits.log"):
                 with open("logs/hits.log","r") as f:
                     hits = f.readlines()[-5:]
+                
                 if hits:
                     logs_text += "<b>🎯 Hits:</b>\n"
                     for h in hits:
                         logs_text += f"• {h.strip()[-80:]}\n"
             
-                        final_text = logs_text + f"\n👨‍💻 {DEVELOPER}" if logs_text != "" else "No hay logs aún."
+            final_text = logs_text + f"\n👨‍💻 {DEVELOPER}" if logs_text != "" else "No hay logs aún."
             await update.reply_text(final_text, parse_mode="HTML")
+            
         except Exception as e:
             logger.error(f"Error leyendo logs: {e}")
-            await update.reply_text("❌ Error al leer logs.")
+            # Ahora 'final_text' siempre existe, así que puedes mostrarlo o simplemente el error
+            await update.reply_text(f"❌ Error al leer logs: {str(e)}")
 
     async def done_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
